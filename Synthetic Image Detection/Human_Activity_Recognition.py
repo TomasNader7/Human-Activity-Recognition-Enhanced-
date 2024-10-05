@@ -1,23 +1,23 @@
-# Importing necessary libraries
+# Import necessary libraries
 import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import numpy as np
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, BatchNormalization, Dropout
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.utils import to_categorical
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report
-from sklearn.model_selection import cross_val_score, train_test_split
+from sklearn.model_selection import cross_val_score, train_test_split, RepeatedStratifiedKFold
 from sklearn.linear_model import Perceptron, LogisticRegression
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier, StackingClassifier
-from sklearn.model_selection import RepeatedStratifiedKFold
-import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
+from xgboost import XGBClassifier
+from sklearn.utils.class_weight import compute_class_weight
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, BatchNormalization, Dropout, Dense, GlobalAveragePooling1D
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.utils import to_categorical
 
 # Load the dataset using the file paths
 X_train_path = r"C:\Users\tomin\OneDrive\Machine Learning\Final Project\X_train.txt"
@@ -79,95 +79,72 @@ print(f"After alignment: X_train_preprocessed shape: {X_train_preprocessed.shape
 # Split dataset into training and validation sets
 X_train_split, X_val_split, y_train_split, y_val_split = train_test_split(X_train_preprocessed, y_train_int, test_size=0.2, random_state=42)
 
-# Define a function to create the stacking model
-def get_stacking_model():
-    # Define base models
-    level0 = list()
-    level0.append(('perceptron', Perceptron(max_iter=1000, tol=1e-3)))
-    level0.append(('random_forest', RandomForestClassifier(n_estimators=50, random_state=42)))  # Reduced number of trees
-    level0.append(('svm', SVC(kernel='rbf', C=1.0, random_state=42)))
-
-    # Define meta learner model
-    level1 = LogisticRegression(solver='saga', max_iter=500, tol=1e-3, C=0.1)  # Reduced max_iter
-
-    # Define the stacking ensemble
-    model = StackingClassifier(estimators=level0, final_estimator=level1, cv=3)  # Reduced number of folds
+# Stacking model definition with added classifiers
+def get_advanced_stacking_model():
+    level0 = [
+        ('perceptron', Perceptron(max_iter=2000, tol=1e-3)),
+        ('random_forest', RandomForestClassifier(n_estimators=20, max_depth=5, random_state=42)),
+        ('svm', SVC(kernel='rbf', C=1.0, probability=True, random_state=42)),
+        ('xgboost', XGBClassifier(n_estimators=20, learning_rate=0.1, random_state=42)),
+        ('gradient_boosting', GradientBoostingClassifier(n_estimators=20, learning_rate=0.1, max_depth=3, random_state=42))
+    ]
+    level1 = LogisticRegression(solver='saga', max_iter=2000, tol=1e-4)
+    
+    # Stacking model with 3-fold cross-validation
+    model = StackingClassifier(estimators=level0, final_estimator=level1, cv=3)
     return model
 
-# Define the models to evaluate
-def get_models():
-    models = dict()
-    models['perceptron'] = Perceptron(max_iter=1000, tol=1e-3)
-    models['random_forest'] = RandomForestClassifier(n_estimators=50, random_state=42)  # Reduced number of trees
-    models['svm'] = SVC(kernel='rbf', C=1.0, random_state=42)
-    models['stacking'] = get_stacking_model()
-    return models
 
-# Evaluate a given model using cross-validation
-def evaluate_model(model, X, y):
-    cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=2, random_state=42)  # Reduced number of folds and repeats
-    scores = cross_val_score(model, X, y, scoring='accuracy', cv=cv, n_jobs=-1, error_score='raise')
-    return scores
+# Train the stacking model
+stacking_model = get_advanced_stacking_model()
+stacking_model.fit(X_train_split, y_train_split)
 
-# Train and evaluate models
-models = get_models()
-results, names = list(), list()
-for name, model in models.items():
-    # Train and evaluate each model
-    model.fit(X_train_split, y_train_split)
-    y_pred = model.predict(X_val_split)
-    acc = accuracy_score(y_val_split, y_pred)
-    print(f"{name.capitalize()} Accuracy: {acc}")
-    print(f"\nClassification Report for {name.capitalize()}:")
-    print(classification_report(y_val_split, y_pred))
-    print(f"\nPerforming Cross-Validation for {name.capitalize()}...")
-    scores = evaluate_model(model, X_train_split, y_train_split)
-    results.append(scores)
-    names.append(name)
-    print(f"{name.capitalize()} Cross-Validation Accuracies: {scores}")
-    print(f"{name.capitalize()} Mean Accuracy: {scores.mean()}")
+# Evaluate the stacking model on test set
+y_pred_test_stacking = stacking_model.predict(X_test_preprocessed)
+stacking_test_accuracy = accuracy_score(y_test_int, y_pred_test_stacking)
+print(f"Advanced Stacking Model Test Accuracy: {stacking_test_accuracy}")
 
-# Plot model performance for comparison
-plt.figure(figsize=(10, 6))
-plt.boxplot(results, tick_labels=names, showmeans=True)
-plt.title('Model Performance Comparison')
-plt.ylabel('Accuracy')
-plt.show()
-
-# CNN Model
-def create_cnn_model():
+# Enhanced CNN architecture
+def create_advanced_cnn_model():
     model = Sequential([
         Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_split.shape[1], 1)),
         BatchNormalization(),
         MaxPooling1D(pool_size=2),
-        Dropout(0.25),  # Dropout layer for regularization
-        Conv1D(filters=128, kernel_size=3, activation='relu'),
+        Dropout(0.25),
+        
+        Conv1D(filters=128, kernel_size=5, activation='relu'),
         BatchNormalization(),
         MaxPooling1D(pool_size=2),
-        Dropout(0.25),  # Dropout layer for regularization
-        Flatten(),
+        Dropout(0.25),
+
+        Conv1D(filters=256, kernel_size=3, activation='relu'),
+        BatchNormalization(),
+        MaxPooling1D(pool_size=2),
+        Dropout(0.25),
+
+        GlobalAveragePooling1D(),  # Use Global Average Pooling
         Dense(128, activation='relu'),
         BatchNormalization(),
-        Dropout(0.5),  # Dropout in the fully connected layer
-        Dense(len(y_train_split.unique()), activation='softmax')  # Output layer
+        Dropout(0.5),
+
+        Dense(len(y_train_split.unique()), activation='softmax')
     ])
+    
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     return model
+
+# Compute class weights to handle class imbalance
+class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(y_train_split), y=y_train_split)
+class_weights_dict = dict(enumerate(class_weights))
 
 # Prepare data for CNN
 X_train_cnn = np.expand_dims(X_train_split, axis=2)
 X_val_cnn = np.expand_dims(X_val_split, axis=2)
+y_train_cnn = to_categorical(y_train_split)
+y_val_cnn = to_categorical(y_val_split)
 
-# Convert integer labels to categorical format
-y_train_cnn = to_categorical(y_train_split)  # Use the integer-mapped y_train_split
-y_val_cnn = to_categorical(y_val_split)  # Use the integer-mapped y_val_split
-
-# Check the cardinality to avoid mismatches
-print(f"X_train_cnn shape: {X_train_cnn.shape}, y_train_cnn shape: {y_train_cnn.shape}")
-print(f"X_val_cnn shape: {X_val_cnn.shape}, y_val_cnn shape: {y_val_cnn.shape}")
-
-# CNN Model training
-cnn_model = create_cnn_model()
+# CNN training with class weights
+cnn_model = create_advanced_cnn_model()
 early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-5)
 
@@ -176,15 +153,16 @@ cnn_history = cnn_model.fit(
     epochs=20, 
     batch_size=32, 
     validation_data=(X_val_cnn, y_val_cnn), 
+    class_weight=class_weights_dict,  # Apply class weights
     callbacks=[early_stopping, reduce_lr]
 )
 
-# Evaluate CNN on validation set
-cnn_val_loss, cnn_val_accuracy = cnn_model.evaluate(X_val_cnn, y_val_cnn)
-print(f"CNN Validation Accuracy: {cnn_val_accuracy}")
-
 # Evaluate CNN on the test set
 X_test_cnn = np.expand_dims(X_test_preprocessed, axis=2)
-y_test_cnn = to_categorical(pd.Series(y_test_int).map(activity_name_to_index))
+y_test_cnn = to_categorical(y_test_int)
 cnn_test_loss, cnn_test_accuracy = cnn_model.evaluate(X_test_cnn, y_test_cnn)
-print(f"CNN Test Accuracy: {cnn_test_accuracy}")
+print(f"Enhanced CNN Test Accuracy: {cnn_test_accuracy}")
+
+# Comparison of test accuracies
+print(f"Advanced Stacking Model Test Accuracy: {stacking_test_accuracy}")
+print(f"Enhanced CNN Test Accuracy: {cnn_test_accuracy}")
