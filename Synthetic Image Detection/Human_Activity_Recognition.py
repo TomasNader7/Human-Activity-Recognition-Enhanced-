@@ -7,7 +7,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import cross_val_score, train_test_split, RepeatedStratifiedKFold
 from sklearn.linear_model import Perceptron, LogisticRegression
 from sklearn.svm import SVC
@@ -166,3 +166,59 @@ print(f"Enhanced CNN Test Accuracy: {cnn_test_accuracy}")
 # Comparison of test accuracies
 print(f"Advanced Stacking Model Test Accuracy: {stacking_test_accuracy}")
 print(f"Enhanced CNN Test Accuracy: {cnn_test_accuracy}")
+
+# Visualization
+
+# 1. Plot training and validation accuracy and loss
+def plot_cnn_history(history):
+    # Plot accuracy
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('CNN Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    # Plot loss
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('CNN Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+plot_cnn_history(cnn_history)
+
+# 2. Confusion matrix for stacking model
+def plot_confusion_matrix(y_true, y_pred, title='Confusion Matrix'):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(10, 7))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=activity_names.values(), yticklabels=activity_names.values())
+    plt.title(title)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.show()
+
+plot_confusion_matrix(y_test_int, y_pred_test_stacking, title='Stacking Model Confusion Matrix')
+
+# 3. Confusion matrix for CNN
+y_pred_cnn = np.argmax(cnn_model.predict(X_test_cnn), axis=1)
+plot_confusion_matrix(y_test_int, y_pred_cnn, title='CNN Confusion Matrix')
+
+# 4. Class distribution in training data
+def plot_class_distribution(y_train):
+    plt.figure(figsize=(10, 6))
+    sns.countplot(x=y_train, palette='viridis', hue=y_train, legend=False)
+    plt.title('Class Distribution in Training Data')
+    plt.xlabel('Activity')
+    plt.ylabel('Count')
+    plt.xticks(rotation=45)
+    plt.show()
+
+plot_class_distribution(y_train)
