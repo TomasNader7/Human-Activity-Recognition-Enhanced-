@@ -94,7 +94,6 @@ def get_advanced_stacking_model():
     model = StackingClassifier(estimators=level0, final_estimator=level1, cv=3)
     return model
 
-
 # Train the stacking model
 stacking_model = get_advanced_stacking_model()
 stacking_model.fit(X_train_split, y_train_split)
@@ -103,6 +102,14 @@ stacking_model.fit(X_train_split, y_train_split)
 y_pred_test_stacking = stacking_model.predict(X_test_preprocessed)
 stacking_test_accuracy = accuracy_score(y_test_int, y_pred_test_stacking)
 print(f"Advanced Stacking Model Test Accuracy: {stacking_test_accuracy}")
+
+# Calculate and print accuracy of each base learner
+base_learners = stacking_model.named_estimators_
+for name, model in base_learners.items():
+    model.fit(X_train_split, y_train_split)  # Fit model on training data
+    y_pred = model.predict(X_test_preprocessed)  # Predict on test data
+    accuracy = accuracy_score(y_test_int, y_pred)
+    print(f"{name} Test Accuracy: {accuracy}")
 
 # Enhanced CNN architecture
 def create_advanced_cnn_model():
@@ -194,31 +201,3 @@ def plot_cnn_history(history):
     plt.show()
 
 plot_cnn_history(cnn_history)
-
-# 2. Confusion matrix for stacking model
-def plot_confusion_matrix(y_true, y_pred, title='Confusion Matrix'):
-    cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(10, 7))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=activity_names.values(), yticklabels=activity_names.values())
-    plt.title(title)
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.show()
-
-plot_confusion_matrix(y_test_int, y_pred_test_stacking, title='Stacking Model Confusion Matrix')
-
-# 3. Confusion matrix for CNN
-y_pred_cnn = np.argmax(cnn_model.predict(X_test_cnn), axis=1)
-plot_confusion_matrix(y_test_int, y_pred_cnn, title='CNN Confusion Matrix')
-
-# 4. Class distribution in training data
-def plot_class_distribution(y_train):
-    plt.figure(figsize=(10, 6))
-    sns.countplot(x=y_train, palette='viridis', hue=y_train, legend=False)
-    plt.title('Class Distribution in Training Data')
-    plt.xlabel('Activity')
-    plt.ylabel('Count')
-    plt.xticks(rotation=45)
-    plt.show()
-
-plot_class_distribution(y_train)
