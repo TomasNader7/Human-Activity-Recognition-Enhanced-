@@ -70,16 +70,16 @@ A **CNN model** is built with the following architecture:
 ## Visualization Examples
 
 1. **CNN Training Accuracy and Loss**:
-   ![CNN Accuracy and Loss](images/cnn_accuracy_loss.png)
+   ![CNN Accuracy and Loss](Figure_1.png)
 
 2. **Confusion Matrix for Stacking Model**:
-   ![Stacking Model Confusion Matrix](images/stacking_confusion_matrix.png)
+   ![Stacking Model Confusion Matrix](Figure_2.png)
 
 3. **Confusion Matrix for CNN**:
-   ![CNN Confusion Matrix](images/cnn_confusion_matrix.png)
+   ![CNN Confusion Matrix](Figure_3.png)
 
 4. **Class Distribution in Training Data**:
-   ![Class Distribution](images/class_distribution.png)
+   ![Class Distribution](Figure_4.png)
 
 ## Conclusion
 This research demonstrates the successful implementation of machine learning models to recognize human activities using sensor data. The results highlight the effectiveness of advanced models like stacking classifiers and CNNs in handling the complexity of HAR tasks.
