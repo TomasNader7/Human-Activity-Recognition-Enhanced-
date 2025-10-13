@@ -1,23 +1,38 @@
-# Import necessary libraries
+# Data manipulation and visualization
 import pandas as pd
 import numpy as np
-import seaborn as sns
 import matplotlib.pyplot as plt
+import tensorflow as tf
+
+# Preprocessing and pipeline utilities
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.model_selection import cross_val_score, train_test_split, RepeatedStratifiedKFold
+
+# Model evaluation and selection
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
+
+# Machine learning models
 from sklearn.linear_model import Perceptron, LogisticRegression
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from xgboost import XGBClassifier
-from sklearn.utils.class_weight import compute_class_weight
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, BatchNormalization, Dropout, Dense, GlobalAveragePooling1D
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.utils import to_categorical
+
+# Deep learning with TensorFlow/Keras
+import tensorflow as tf
+Sequential = tf.keras.models.Sequential
+Conv1D = tf.keras.layers.Conv1D
+MaxPooling1D = tf.keras.layers.MaxPooling1D
+BatchNormalization = tf.keras.layers.BatchNormalization
+Dropout = tf.keras.layers.Dropout
+Dense = tf.keras.layers.Dense
+GlobalAveragePooling1D = tf.keras.layers.GlobalAveragePooling1D
+EarlyStopping = tf.keras.callbacks.EarlyStopping
+ReduceLROnPlateau = tf.keras.callbacks.ReduceLROnPlateau
+to_categorical = tf.keras.utils.to_categorical
 
 # Load the dataset using the file paths
 X_train_path = r"C:\Users\tomin\OneDrive\Machine Learning\Final Project\X_train.txt"
@@ -129,7 +144,7 @@ def create_advanced_cnn_model():
         MaxPooling1D(pool_size=2),
         Dropout(0.25),
 
-        GlobalAveragePooling1D(),  # Use Global Average Pooling
+        GlobalAveragePooling1D(),  
         Dense(128, activation='relu'),
         BatchNormalization(),
         Dropout(0.5),
