@@ -223,78 +223,194 @@ def extract_all_features(windows):
     return features_df
 
 
+# ============================================================================
+# STEP 5: PREPARE FOR UCI HAR FORMAT (Optional but recommended)
+# ============================================================================
+def prepare_uci_har_format(features_df):
+    print("Step 5: Preparing UCI HAR format...")
+
+    # Create mapping from activity names to numeric labels
+    activity_mapping = {
+        activity: idx + 1 
+        for idx, activity in enumerate(sorted(features_df['activity'].unique()))
+    }
+
+     # Reverse mapping for reference
+    reverse_mapping = {v: k for k, v in activity_mapping.items()}
+    
+    print(f"Activity mapping:")
+    for activity, label in sorted(activity_mapping.items(), key=lambda x: x[1]):
+        print(f"    {label} = {activity}")
+
+    # Extract X (features) - all columns except activity and user
+    X = features_df.drop(columns=['activity', 'user_id'])
+    
+    # Extract y (labels) - convert activity names to numbers
+    y = features_df['activity'].map(activity_mapping)
+
+    subjects = features_df['user_id']
+    
+    print(f"X shape: {X.shape}")
+    print(f"y shape: {y.shape}\n")
+    
+    return X, y, subjects, activity_mapping, reverse_mapping
 
 
 
+# ============================================================================
+# STEP 6: SAVE TO CSV
+# ============================================================================
+def save_to_csv(features_df, X, y, subjects, activity_mapping, reverse_mapping, output_dir= r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection"):
+
+    print("Step 6: Saving to CSV files...")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save full feature dataframe (with activity and user columns)
+    features_csv_path = os.path.join(output_dir, "wisdm_features_with_metadata.csv")
+    features_df.to_csv(features_csv_path, index=False)
+    print(f"Saved: {features_csv_path}")
+
+    # UCI-like: space-separated, no header/index
+    X.to_csv(os.path.join(output_dir, "X.txt"), sep=' ', index=False, header=False)
+    y.to_csv(os.path.join(output_dir, "y.txt"), sep=' ', index=False, header=False)
+    subjects.to_csv(os.path.join(output_dir, "subject.txt"), sep=' ', index=False, header=False)
+    print(f"Saved UCI files: X.txt, y.txt, subject.txt")
+
+    # Activity labels
+    mapping_path = os.path.join(output_dir, "activity_labels.txt")
+    with open(mapping_path, 'w') as f:
+        for label, activity in sorted(reverse_mapping.items(), key=lambda x: x[0]):
+            f.write(f"{label} {activity}\n")
+    print(f"Saved: {mapping_path}\n")
+    
+    print("Conversion complete!")
+    
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+def main(raw_folder_path = r"C:\Users\tomin\OneDrive\Machine Learning\Extension_research\wisdm+smartphone+and+smartwatch+activity+and+biometrics+dataset\wisdm-dataset\wisdm-dataset\raw",
+         subset_size=1000):
+
+    print("=" * 70)
+    print("WISDM to UCI HAR Feature Extraction Pipeline")
+    print("=" * 70 + "\n")
+    
+    try:
+        # Step 1-2
+        wisdm_df = load_wisdm_data(raw_folder_path)
+        windows = segment_data_into_windows(wisdm_df, window_size=128, overlap=0.5)  
+        
+        if not windows:
+            raise ValueError("No windows created—check data segments.")
+        
+        # --- SUBSET FOR TESTING ---
+        if subset_size is not None and subset_size > 0:
+            original_count = len(windows)
+            windows = windows[:subset_size]
+            print(f"Testing on subset: {len(windows)} windows (out of {original_count} total)\n")
+        
+        # Step 3-4
+        features_df = extract_all_features(windows)
+        
+        # Step 5
+        X, y, subjects, activity_mapping, reverse_mapping = prepare_uci_har_format(features_df)
+        
+        # Step 6
+        save_to_csv(features_df, X, y, subjects, activity_mapping, reverse_mapping)
+
+        # Quick validation on subset
+        print("Subset CSV Validation:")
+        print(f"  - No NaNs in X: {not X.isna().any().any()}")
+        print(f"  - Activity distribution: {features_df['activity'].value_counts()}")
+        print(f"  - Sample features mean (X_mean): {X['X_mean'].mean():.4f} (plausible ~0-10 for accel)\n")
+        
+        print("=" * 70)
+        print("Summary:")
+        print(f"  Total windows: {len(features_df)}")
+        print(f"  Features per window: {X.shape[1]}")
+        print(f"  Activities: {len(activity_mapping)}")
+        print("=" * 70)
+        
+        return features_df, X, y, activity_mapping  
+    
+    except Exception as e:
+        print(f"Pipeline failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None, None
+    
 
 
 if __name__ == "__main__":
-    raw_folder_path = r"C:\Users\tomin\OneDrive\Machine Learning\Extension_research\wisdm+smartphone+and+smartwatch+activity+and+biometrics+dataset\wisdm-dataset\wisdm-dataset\raw"
-    
 
-    try:
-        # Step 1: Load WISDM data
-        wisdm_df = load_wisdm_data(raw_folder_path)
+    raw_folder = r"C:\Users\tomin\OneDrive\Machine Learning\Extension_research\wisdm+smartphone+and+smartwatch+activity+and+biometrics+dataset\wisdm-dataset\wisdm-dataset\raw"
+    features_df, X, y, activity_mapping = main(raw_folder, subset_size=1000)
 
-        # Step 2: Segment into windows
-        windows = segment_data_into_windows(wisdm_df, window_size=128, overlap=0.5)      
+    # try:
+    #     # Step 1: Load WISDM data
+    #     wisdm_df = load_wisdm_data(raw_folder_path)
 
-        # Step 3: Test compute_features_for_window on real data (first window)
-        if windows:
-            sample_window_array = np.array(windows[0]['window'])
-            features = compute_features_for_window(sample_window_array)
+    #     # Step 2: Segment into windows
+    #     windows = segment_data_into_windows(wisdm_df, window_size=128, overlap=0.5)      
 
-            print("Step 3: Features computed for first real window:")
-            print(features)
-            print(f"Total features extracted: {len(features)}\n")
+    #     # Step 3: Test compute_features_for_window on real data (first window)
+    #     if windows:
+    #         sample_window_array = np.array(windows[0]['window'])
+    #         features = compute_features_for_window(sample_window_array)
 
-            # Basic checks
-            assert 'X_mean' in features, "Missing features!"
-            assert not np.isnan(features['X_mean']), "NaN in features!"
-            print("Feature computation test passed!\n")
+    #         print("Step 3: Features computed for first real window:")
+    #         print(features)
+    #         print(f"Total features extracted: {len(features)}\n")
 
-        # Step 4: Test extract_all_features on real data (subset for speed, then full)
-        if windows:
-            # Quick subtest test (first 500 windows)
-            test_windows = windows[:500]
-            print(f"Testing Step 4 on subset of {len(test_windows)} windows...\n")
-            features_df_subset = extract_all_features(test_windows)
+    #         # Basic checks
+    #         assert 'X_mean' in features, "Missing features!"
+    #         assert not np.isnan(features['X_mean']), "NaN in features!"
+    #         print("Feature computation test passed!\n")
 
-            # Validations for subset
-            assert features_df_subset.shape[0] == len(test_windows), "Subset row mismatch!"
-            assert 'activity' in features_df_subset.columns, "Missing metadata!"
-            print("Step 4 subset test passed!")
-            features_df_subset.to_csv('features_subset.csv', index=False)
-            print("Saved features_subset.csv\n")
+    #     # Step 4: Test extract_all_features on real data (subset for speed, then full)
+    #     if windows:
+    #         # Quick subtest test (first 500 windows)
+    #         test_windows = windows[:500]
+    #         print(f"Testing Step 4 on subset of {len(test_windows)} windows...\n")
+    #         features_df_subset = extract_all_features(test_windows)
 
-            # Full run (uncomment to run on all windows)
-            # print("Running Step 4 on FULL windows...")
-            # features_df = extract_all_features(windows)
-            # 
-            # # Save UCI HAR compatible files
-            # feature_cols = [col for col in features_df.columns if col not in ['activity', 'user_id']]
-            # features_df[feature_cols].to_csv('X_train.txt', sep=' ', index=False, header=False)
-            # # Encode activity to numeric labels (UCI style)
-            # activity_labels = features_df['activity'].astype('category').cat.codes + 1
-            # activity_labels.to_csv('y_train.txt', index=False, header=False)
-            # features_df['user_id'].to_csv('subject_train.txt', index=False, header=False)
-            # print("Saved full UCI HAR files: X_train.txt, y_train.txt, subject_train.txt")
+    #         # Validations for subset
+    #         assert features_df_subset.shape[0] == len(test_windows), "Subset row mismatch!"
+    #         assert 'activity' in features_df_subset.columns, "Missing metadata!"
+    #         print("Step 4 subset test passed!")
+    #         features_df_subset.to_csv('features_subset.csv', index=False)
+    #         print("Saved features_subset.csv\n")
+
+    #         # Full run (uncomment to run on all windows)
+    #         # print("Running Step 4 on FULL windows...")
+    #         # features_df = extract_all_features(windows)
+    #         # 
+    #         # # Save UCI HAR compatible files
+    #         # feature_cols = [col for col in features_df.columns if col not in ['activity', 'user_id']]
+    #         # features_df[feature_cols].to_csv('X_train.txt', sep=' ', index=False, header=False)
+    #         # # Encode activity to numeric labels (UCI style)
+    #         # activity_labels = features_df['activity'].astype('category').cat.codes + 1
+    #         # activity_labels.to_csv('y_train.txt', index=False, header=False)
+    #         # features_df['user_id'].to_csv('subject_train.txt', index=False, header=False)
+    #         # print("Saved full UCI HAR files: X_train.txt, y_train.txt, subject_train.txt")
 
 
-        # Additional checks for testing
-        if windows:
-            print("Sample window:")
-            print(f"User ID: {windows[0]['user_id']}")
-            print(f"Activity: {windows[0]['activity']}")
-            print(f"Window shape: {windows[0]['window'].shape}")
-            print(f"First 5 rows of the window:\n{windows[0]['window'][:5]}\n")
-        else:
-            print("No windows created. Check data.")
-        # Additional checks
-        # print(f" Unique sources: {wisdm_df['source'].unique()}")
-        # print(f" Unique activities: {wisdm_df['activity'].unique()}")
-        # print(f" Unique user IDs: {wisdm_df['user_id'].unique()}")
-        # print(f" Data types:\n{wisdm_df.dtypes}")
+    #     # Additional checks for testing
+    #     if windows:
+    #         print("Sample window:")
+    #         print(f"User ID: {windows[0]['user_id']}")
+    #         print(f"Activity: {windows[0]['activity']}")
+    #         print(f"Window shape: {windows[0]['window'].shape}")
+    #         print(f"First 5 rows of the window:\n{windows[0]['window'][:5]}\n")
+    #     else:
+    #         print("No windows created. Check data.")
+    #     # Additional checks
+    #     # print(f" Unique sources: {wisdm_df['source'].unique()}")
+    #     # print(f" Unique activities: {wisdm_df['activity'].unique()}")
+    #     # print(f" Unique user IDs: {wisdm_df['user_id'].unique()}")
+    #     # print(f" Data types:\n{wisdm_df.dtypes}")
 
-    except Exception as e:
-        print(f"Test failed: {e}")
+    # except Exception as e:
+    #     print(f"Test failed: {e}")
