@@ -465,7 +465,7 @@ if __name__ == "__main__":
     output_folder = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection"
     
     # Run full pipeline (remove subset_size for complete dataset)
-    features_df, X, y, activity_mapping = main(raw_folder, output_folder, subset_size=1000)
+    features_df, X, y, activity_mapping = main(raw_folder, output_folder)
    
    
     # try:
