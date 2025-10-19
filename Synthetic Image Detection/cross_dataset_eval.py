@@ -110,9 +110,9 @@ def filter_activities(X, y, subjects, activity_subset='3class'):
         mask = y['activity_name'].isin(perfect_match_activities)
         
         print("  Filtering to 3 perfect-match activities:")
-        print("  - WALKING (A → WALKING)")
-        print("  - SITTING (D → SITTING)") 
-        print("  - STANDING (E → STANDING)")
+        print("  - WALKING (A -> WALKING)")
+        print("  - SITTING (D -> SITTING)") 
+        print("  - STANDING (E -> STANDING)")
         
     else:  # 6class
         # All activities
@@ -358,3 +358,121 @@ def plot_per_activity_ks(per_activity_results, activity_subset, output_dir):
 # ============================================================================
 # STEP 5: SAVE FILTERED DATASETS FOR NEXT STAGE
 # ============================================================================
+def save_filtered_datasets(X, y, subjects, activity_subset, output_dir):
+    """Save filtered datasets for later model training"""
+
+    print("=" * 80)
+    print(f"SAVING FILTERED {activity_subset.upper()} DATASET")
+    print("=" * 80)
+
+    subset_dir = os.path.join(output_dir, activity_subset)
+    os.makedirs(subset_dir, exist_ok=True)
+
+    # Save features, labels, subjects
+    X.to_csv(os.path.join(subset_dir, 'X_filtered.txt'), sep=' ', index=False, header=False)
+    y[['activity']].to_csv(os.path.join(subset_dir, 'y_filtered.txt'), index=False, header=False)
+    subjects.to_csv(os.path.join(subset_dir, 'subject_filtered.txt'), index=False, header=False)
+
+    # Save activity mapping
+    unique_activities = sorted(y['activity_name'].unique())
+    activity_mapping = {act: (y[y['activity_name']==act]['activity'].iloc[0]) 
+                       for act in unique_activities}
+    
+    mapping_df = pd.DataFrame([
+        {'label': label, 'activity': act} 
+        for act, label in sorted(activity_mapping.items(), key=lambda x: x[1])
+    ])
+    mapping_df.to_csv(os.path.join(subset_dir, 'activity_mapping.csv'), index=False)
+    
+    print(f"  Saved filtered dataset to: {subset_dir}/")
+    print(f"  Files: X_filtered.txt, y_filtered.txt, subject_filtered.txt, activity_mapping.csv")
+    print()
+
+# ============================================================================
+# MAIN PIPELINE (DATA PREP & K-S TESTS ONLY)
+# ============================================================================
+def run_data_prep_and_ks_tests(uci_dir, wisdm_dir, activity_subset='3class', output_dir='results'):
+    """
+    Stage 1 & 2: Data preparation and K-S tests
+    NO MODEL TRAINING YET
+    """
+    print("\n")
+    print("+" + "=" * 78 + "+")
+    print("|" + " " * 15 + "DATA PREPARATION & K-S TESTING" + " " * 32 + "|")
+    print("|" + " " * 25 + f"Mode: {activity_subset.upper()}" + " " * (52 - len(activity_subset)) + "|")
+    print("+" + "=" * 78 + "+")
+    print("\n")
+
+    # Load data
+    X_uci, y_uci, subj_uci, labels = load_uci_har_data(uci_dir)
+    X_wisdm, y_wisdm, subj_wisdm, _ = load_wisdm_data(wisdm_dir)
+
+    # Filter to desired activities
+    X_uci_filt, y_uci_filt, subj_uci_filt, act_map_uci = filter_activities(X_uci, y_uci, subj_uci, activity_subset)
+    X_wisdm_filt, y_wisdm_filt, subj_wisdm_filt, act_map_wisdm = filter_activities(X_wisdm, y_wisdm, subj_wisdm, activity_subset)
+
+    # K-S tests
+    ks_overall, ks_per_activity = perform_ks_tests(X_uci_filt, X_wisdm_filt, y_uci_filt, y_wisdm_filt,
+        activity_subset, output_dir=os.path.join(output_dir, activity_subset))
+    
+    # Save filtered datasets for next stage
+    save_filtered_datasets(X_uci_filt, y_uci_filt, subj_uci_filt, f'{activity_subset}_uci', output_dir)
+    save_filtered_datasets(X_wisdm_filt, y_wisdm_filt, subj_wisdm_filt, f'{activity_subset}_wisdm', output_dir)
+
+    # Final summary
+    print("\n" + "=" * 80)
+    print("SUMMARY")
+    print("=" * 80)
+    print(f"Configuration: {activity_subset.upper()}")
+    print(f"UCI HAR (source): {len(X_uci_filt):,} samples")
+    print(f"WISDM (target): {len(X_wisdm_filt):,} samples")
+    print(f"\nDomain Shift Analysis:")
+    sig_count = ks_overall['significant'].sum()
+    print(f"  Significant features: {sig_count}/{len(ks_overall)} ({100*sig_count/len(ks_overall):.1f}%)")
+    print(f"  Mean K-S statistic: {ks_overall['ks_statistic'].mean():.4f}")
+    print(f"\n Datasets prepared and saved for model training (Stage 3)")
+    print("=" * 80 + "\n")
+    
+    return ks_overall, ks_per_activity
+
+# ============================================================================
+# USAGE
+# ============================================================================
+if __name__ == "__main__":
+    # UPDATE THESE PATHS
+    UCI_HAR_DIR = r"C:\Users\tomin\OneDrive\Machine Learning\UCI HAR Dataset"
+    WISDM_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection"
+    OUTPUT_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results"
+
+    # ==== PRIMARY: 3-CLASS ANALYSIS ====
+    print("\n" + "= " * 40)
+    print("PRIMARY ANALYSIS: 3-CLASS (PERFECT MATCHES)")
+    print("= " * 40 + "\n")
+    
+    ks_3class, per_act_3class = run_data_prep_and_ks_tests(
+        uci_dir=UCI_HAR_DIR,
+        wisdm_dir=WISDM_DIR,
+        activity_subset='3class',
+        output_dir=OUTPUT_DIR
+    )
+    
+    # ==== SECONDARY: 6-CLASS ANALYSIS ====
+    print("\n" + "=" * 40)
+    print("SECONDARY ANALYSIS: 6-CLASS (ALL ACTIVITIES)")
+    print("= " * 40 + "\n")
+    
+    ks_6class, per_act_6class = run_data_prep_and_ks_tests(
+        uci_dir=UCI_HAR_DIR,
+        wisdm_dir=WISDM_DIR,
+        activity_subset='6class',
+        output_dir=OUTPUT_DIR
+    )
+    
+    print("\n" + "=" * 80)
+    print("DATA PREPARATION COMPLETE")
+    print("=" * 80)
+    print("\nGenerated files:")
+    print(f"  {OUTPUT_DIR}/3class/ - 3-class datasets & K-S results")
+    print(f"  {OUTPUT_DIR}/6class/ - 6-class datasets & K-S results")
+    print("\nNext: Use these filtered datasets for model training (Stage 3)")
+    print("=" * 80)
