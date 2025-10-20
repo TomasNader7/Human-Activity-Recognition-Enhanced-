@@ -1,478 +1,442 @@
-# Goal: Implements both 3-class (perfect match) and 6-class (all activities) analysis
-
-""" 
-1) Generate both datasets (3-class and 6-class versions)
-2) Run 3-class cross-dataset evaluation FIRST
-3) Document baseline performance and degradation
-4) Then run 6-class as comparative analysis
 """
+Stage 3: Cross-Dataset Evaluation with Model Training
+Train on UCI HAR (source) → Test on WISDM (target)
+Goal: generate confusion matrices and performance metrics
+"""
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
+from sklearn.ensemble import StackingClassifier, RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import Perceptron, LogisticRegression
+from sklearn.feature_selection import SelectKBest, mutual_info_classif
+from sklearn.svm import SVC
+from xgboost import XGBClassifier
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 import os
+import warnings
+warnings.filterwarnings('ignore')
 
-# Set style 
+# Set style
 sns.set_style("whitegrid")
-plt.rcParams['figure.figsize'] = (12, 8)
+plt.rcParams['figure.figsize'] = (12, 10)
 
 # ============================================================================
-# STEP 1: LOAD UCI HAR DATASET (SOURCE DOMAIN)
+# STEP 1: LOAD FILTERED DATASETS
 # ============================================================================
-def load_uci_har_data(data_dir):
+def load_filtered_datasets(data_dir, dataset_type='3class'):
 
     print("=" * 80)
-    print("LOADING UCI HAR DATASET (Source Domain)")
+    print(f"LOADING FILTERED {dataset_type.upper()} DATASETS")
     print("=" * 80)
+
+    # Load UCI HAR (source domain)
+    uci_dir = os.path.join(data_dir, f'{dataset_type}_uci')
+    X_train = pd.read_csv(os.path.join(uci_dir, 'X_filtered.txt'), sep=r'\s+', header=None)
+    y_train = pd.read_csv(os.path.join(uci_dir, 'y_filtered.txt'), header=None, names=['activity'])
+
+    # Load WISDM (target domain)
+    wisdm_dir = os.path.join(data_dir, f'{dataset_type}_wisdm')
+    X_test = pd.read_csv(os.path.join(wisdm_dir, 'X_filtered.txt'), sep=r'\s+', header=None)
+    y_test = pd.read_csv(os.path.join(wisdm_dir, 'y_filtered.txt'), header=None, names=['activity'])
+
+    # Load activity mapping
+    activity_mapping = pd.read_csv(os.path.join(uci_dir, 'activity_mapping.csv'))
+    activity_labels = dict(zip(activity_mapping['label'], activity_mapping['activity']))
+
+    # Align features using feature selection on UCI HAR to match WISDM's feature count
+    if X_train.shape[1] != X_test.shape[1]:
+        print(f"Feature mismatch detected: UCI HAR has {X_train.shape[1]} features, WISDM has {X_test.shape[1]} features")
+        target_features = X_test.shape[1]
+        selector = SelectKBest(score_func=mutual_info_classif, k=target_features)
+        X_train_selected = selector.fit_transform(X_train, y_train['activity'])
+        # Convert back to DataFrame for consistency
+        X_train = pd.DataFrame(X_train_selected)
+        print(f"Selected top {target_features} features from UCI HAR using mutual information for compatibility.")
     
-    # Load feature matrix
-    X_train = pd.read_csv(os.path.join(data_dir, 'train', 'X_train.txt'), sep=r'\s+', header=None)
-    
-    # Load labels
-    y_train = pd.read_csv(os.path.join(data_dir, 'train', 'y_train.txt'), header=None, names=['activity'])
-    
-    # Load subjects
-    subject_train = pd.read_csv(os.path.join(data_dir, 'train', 'subject_train.txt'), header=None, names=['subject'])
-    
-    # Activity mapping
-    activity_labels = {
-        1: 'WALKING',
-        2: 'WALKING_UPSTAIRS', 
-        3: 'WALKING_DOWNSTAIRS',
-        4: 'SITTING',
-        5: 'STANDING',
-        6: 'LAYING'
-    }
-    
-    y_train['activity_name'] = y_train['activity'].map(activity_labels)
-    
-    print(f"  Loaded UCI HAR training data")
+    print(f"  UCI HAR (Source - Training):")
     print(f"  Shape: {X_train.shape}")
     print(f"  Samples per activity:")
-    for act, count in y_train['activity_name'].value_counts().sort_index().items():
-        print(f"    {act}: {count}")
-    print()
+    for label, activity in sorted(activity_labels.items()):
+        count = (y_train['activity'] == label).sum()
+        print(f"    {label}. {activity}: {count:,}")
     
-    return X_train, y_train, subject_train, activity_labels
-
-# ============================================================================
-# STEP 2: LOAD WISDM DATASET (TARGET DOMAIN)  
-# ============================================================================
-def load_wisdm_data(data_dir):
-
-    print("=" * 80)
-    print("LOADING WISDM DATASET (Target Domain)")
-    print("=" * 80)
-    
-    # Load feature matrix
-    X_wisdm = pd.read_csv(os.path.join(data_dir, 'X_wisdm.txt'), sep=r'\s+', header=None)
-    
-    # Load labels  
-    y_wisdm = pd.read_csv(os.path.join(data_dir, 'y_wisdm.txt'), header=None, names=['activity'])
-    
-    # Load subjects
-    subject_wisdm = pd.read_csv(os.path.join(data_dir, 'subject_wisdm.txt'), header=None, names=['subject'])
-    
-    # Activity mapping (same as UCI)
-    activity_labels = {
-        1: 'WALKING',
-        2: 'WALKING_UPSTAIRS',
-        3: 'WALKING_DOWNSTAIRS', 
-        4: 'SITTING',
-        5: 'STANDING',
-        6: 'LAYING'
-    }
-    
-    y_wisdm['activity_name'] = y_wisdm['activity'].map(activity_labels)
-    
-    print(f"  Loaded WISDM data")
-    print(f"  Shape: {X_wisdm.shape}")
+    print(f"\n  WISDM (Target - Testing):")
+    print(f"  Shape: {X_test.shape}")
     print(f"  Samples per activity:")
-    for act, count in y_wisdm['activity_name'].value_counts().sort_index().items():
-        print(f"    {act}: {count}")
+    for label, activity in sorted(activity_labels.items()):
+        count = (y_test['activity'] == label).sum()
+        print(f"    {label}. {activity}: {count:,}")
+    
     print()
     
-    return X_wisdm, y_wisdm, subject_wisdm, activity_labels
+    return X_train, y_train, X_test, y_test, activity_labels
 
-# ============================================================================
-# STEP 3: FILTER FOR 3-CLASS (PERFECT MATCH) OR 6-CLASS
-# ============================================================================
-def filter_activities(X, y, subjects, activity_subset='3class'):
 
+# ===========================================================================================
+# STEP 2: BUILD STACKING ENSEMBLE MODEL (From Research Paper - Human_Activity_Recognition.py)
+# ===========================================================================================
+def build_stacking_ensemble():
     print("=" * 80)
-    print(f"FILTERING TO {activity_subset.upper()} ACTIVITIES")
+    print("BUILDING ADVANCED STACKING ENSEMBLE MODEL")
     print("=" * 80)
+
+    # Base learners (Level 0)
+    base_learners = [
+        ('perceptron', Perceptron(max_iter=2000, tol=1e-3, random_state=42)),
+        ('random_forest', RandomForestClassifier(n_estimators=20, max_depth=5, random_state=42)),
+        ('svm', SVC(kernel='rbf', C=1.0, probability=True, random_state=42)),
+        ('xgboost', XGBClassifier(n_estimators=20, learning_rate=0.1, random_state=42, use_label_encoder=False, eval_metric='mlogloss')),
+        ('gradient_boosting', GradientBoostingClassifier(n_estimators=20, learning_rate=0.1, max_depth=3, random_state=42))
+    ]
+
+    # Meta-learner (Level 1)
+    meta_learner = LogisticRegression(solver='saga', max_iter=2000, tol=1e-4, random_state=42)
+
+    # Stacking ensemble
+    stacking_model = StackingClassifier(
+        estimators=base_learners,
+        final_estimator=meta_learner,
+        cv=3,  # 3-fold cross-validation
+        n_jobs=-1
+    )
     
-    if activity_subset == '3class':
-        # Perfect matches only
-        perfect_match_activities = ['WALKING', 'SITTING', 'STANDING']
-        mask = y['activity_name'].isin(perfect_match_activities)
-        
-        print("  Filtering to 3 perfect-match activities:")
-        print("  - WALKING (A -> WALKING)")
-        print("  - SITTING (D -> SITTING)") 
-        print("  - STANDING (E -> STANDING)")
-        
-    else:  # 6class
-        # All activities
-        mask = y['activity_name'].notna()
-        print("  Using all 6 activities:")
-        print("  Perfect matches: WALKING, SITTING, STANDING")
-        print("  Approximate matches: WALKING_UPSTAIRS, WALKING_DOWNSTAIRS, LAYING")
-    
-    X_filtered = X[mask].reset_index(drop=True)
-    y_filtered = y[mask].reset_index(drop=True)
-    subjects_filtered = subjects[mask].reset_index(drop=True)
-    
-    # Remap labels to consecutive integers
-    unique_activities = sorted(y_filtered['activity_name'].unique())
-    activity_to_label = {act: i+1 for i, act in enumerate(unique_activities)}
-    y_filtered['activity'] = y_filtered['activity_name'].map(activity_to_label)
-    
-    print(f"\n  Original samples: {len(y):,}")
-    print(f"  Filtered samples: {len(y_filtered):,}")
-    print(f"  Retention rate: {100*len(y_filtered)/len(y):.1f}%")
-    print(f"\n  Activity distribution after filtering:")
-    for act in unique_activities:
-        count = (y_filtered['activity_name'] == act).sum()
-        pct = 100 * count / len(y_filtered)
-        print(f"    {act}: {count:,} ({pct:.1f}%)")
+    print("  Model Configuration:")
+    print("  Base Learners (5):")
+    for name, _ in base_learners:
+        print(f"    - {name}")
+    print("  Meta-Learner: Logistic Regression (SAGA solver)")
+    print("  Cross-Validation: 3-fold")
     print()
     
-    return X_filtered, y_filtered, subjects_filtered, activity_to_label
+    return stacking_model
 
 # ============================================================================
-# STEP 4: KOLMOGOROV-SMIRNOV TEST (Domain Shift Analysis)
+# STEP 3: TRAIN MODEL ON SOURCE DOMAIN (UCI HAR)
 # ============================================================================
-def perform_ks_tests(X_source, X_target, y_source, y_target, activity_subset='3class', output_dir='results'):
-
+def train_model(model, X_train, y_train):
+    """Train the stacking ensemble on UCI HAR data"""
     print("=" * 80)
-    print("PERFORMING KOLMOGOROV-SMIRNOV TESTS")
-    print("=" * 80)
-
-    # Match feature count (UCI has 561, WISDM has 61)
-    n_features = min(X_source.shape[1], X_target.shape[1])
-    X_source_matched = X_source.iloc[:, :n_features]
-    X_target_matched = X_target.iloc[:, :n_features]
-
-    print(f"Analyzing {n_features} matched features")
-    print(f"Source samples: {len(X_source_matched):,}")
-    print(f"Target samples: {len(X_target_matched):,}\n")
-
-    # ==== OVERALL K-S TESTS (across all activities) ====
-    print("=" * 80)
-    print("OVERALL DOMAIN SHIFT (All Activities Combined)")
+    print("TRAINING MODEL ON SOURCE DOMAIN (UCI HAR)")
     print("=" * 80)
     
-    ks_results = []
-    for col_idx in range(n_features):
-        source_feature = X_source_matched.iloc[:, col_idx]
-        target_feature = X_target_matched.iloc[:, col_idx]
+    print("Training in progress...")
+    print("  (This may take a few minutes with 3-fold CV on 5 base models)")
+    
+    # Train
+    model.fit(X_train, y_train['activity'].values)
+    
+    # Evaluate on training data (source domain accuracy)
+    y_pred_train = model.predict(X_train)
+    train_accuracy = accuracy_score(y_train['activity'], y_pred_train)
+    
+    print(f"\n  Training Complete!")
+    print(f"  Source Domain Accuracy: {train_accuracy:.4f} ({train_accuracy*100:.2f}%)")
+    print()
+    
+    return model, train_accuracy
 
-        # K-S test
-        ks_stat, p_value = stats.ks_2samp(source_feature, target_feature)
+# ============================================================================
+# STEP 4: EVALUATE ON TARGET DOMAIN (WISDM)
+# ============================================================================
+def evaluate_on_target(model, X_test, y_test, activity_labels, dataset_type, output_dir):
+    """Evaluate trained model on WISDM and generate confusion matrix"""
+    print("=" * 80)
+    print("EVALUATING ON TARGET DOMAIN (WISDM)")
+    print("=" * 80)
+    
+    # Predict
+    y_pred = model.predict(X_test)
+    
+    # Calculate accuracy
+    test_accuracy = accuracy_score(y_test['activity'], y_pred)
+    
+    print(f"  Target Domain Accuracy: {test_accuracy:.4f} ({test_accuracy*100:.2f}%)")
+    print()
+    
+    # Classification report
+    activity_names = [activity_labels[label] for label in sorted(activity_labels.keys())]
+    print("Classification Report:")
+    print(classification_report(y_test['activity'], y_pred, target_names=activity_names, digits=4))
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_test['activity'], y_pred)
+    
+    # Plot confusion matrix
+    plot_confusion_matrix(cm, activity_names, test_accuracy, dataset_type, output_dir)
+    
+    return test_accuracy, cm
 
-        ks_results.append({
-            'feature_idx': col_idx,
-            'ks_statistic': ks_stat,
-            'p_value': p_value,
-            'significant': p_value < 0.05
-        })
-
-    ks_df = pd.DataFrame(ks_results).sort_values('ks_statistic', ascending=False)
-
-    # Summary statistics
-    significant_count = ks_df['significant'].sum()
-    mean_ks = ks_df['ks_statistic'].mean()
-    median_ks = ks_df['ks_statistic'].median()
-
-    print(f"\nOverall Domain Shift Summary:")
-    print(f"  Significant differences (p < 0.05): {significant_count}/{n_features} ({100*significant_count/n_features:.1f}%)")
-    print(f"  Mean K-S statistic: {mean_ks:.4f}")
-    print(f"  Median K-S statistic: {median_ks:.4f}")
-
-    print(f"\nTop 15 features with largest domain shift:")
-    print(ks_df.head(15)[['feature_idx', 'ks_statistic', 'p_value', 'significant']].to_string(index=False))
-
-    # Save overall results
+# ============================================================================
+# STEP 5: PLOT CONFUSION MATRIX
+# ============================================================================
+def plot_confusion_matrix(cm, activity_names, accuracy, dataset_type, output_dir):
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Create heatmap
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=activity_names, 
+                yticklabels=activity_names,
+                cbar_kws={'label': 'Number of Samples'},
+                ax=ax)
+    
+    ax.set_title(f'Confusion Matrix - Cross-Dataset Evaluation ({dataset_type.upper()})\n'
+                 f'UCI HAR (Train) → WISDM (Test) | Accuracy: {accuracy:.2%}',
+                 fontsize=14, fontweight='bold', pad=20)
+    ax.set_ylabel('True Activity', fontsize=12, fontweight='bold')
+    ax.set_xlabel('Predicted Activity', fontsize=12, fontweight='bold')
+    
+    # Rotate labels for better readability
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    
+    plt.tight_layout()
+    
+    # Save
     os.makedirs(output_dir, exist_ok=True)
-    ks_path = os.path.join(output_dir, f'ks_test_overall_{activity_subset}.csv')
-    ks_df.to_csv(ks_path, index=False)
-    print(f"\n Saved: {ks_path}")
-
-    # ==== PER-ACTIVITY K-S TESTS ====
-    print("\n" + "=" * 80)
-    print("PER-ACTIVITY DOMAIN SHIFT ANALYSIS")
-    print("=" * 80)
-    
-    unique_activities = sorted(y_source['activity_name'].unique())
-    per_activity_results = []
-
-    for activity in unique_activities:
-        print(f"\n--- {activity} ---")
-
-        # Filter to this activity only
-        source_mask = y_source['activity_name'] == activity
-        target_mask = y_target['activity_name'] == activity
-        
-        X_source_activity = X_source_matched[source_mask]
-        X_target_activity = X_target_matched[target_mask]
-        
-        print(f"Source samples: {len(X_source_activity):,}")
-        print(f"Target samples: {len(X_target_activity):,}")
-        
-        if len(X_source_activity) == 0 or len(X_target_activity) == 0:
-            print(" Skipping - insufficient samples")
-            continue
-
-        activity_ks_results = []
-        for col_idx in range(n_features):
-            source_feature = X_source_activity.iloc[:, col_idx]
-            target_feature = X_target_activity.iloc[:, col_idx]
-            
-            ks_stat, p_value = stats.ks_2samp(source_feature, target_feature)
-            
-            activity_ks_results.append({
-                'activity': activity,
-                'feature_idx': col_idx,
-                'ks_statistic': ks_stat,
-                'p_value': p_value,
-                'significant': p_value < 0.05
-            })
-
-        activity_ks_df = pd.DataFrame(activity_ks_results)
-        
-        # Summary for this activity
-        sig_count = activity_ks_df['significant'].sum()
-        mean_ks_act = activity_ks_df['ks_statistic'].mean()
-        
-        print(f"Significant features: {sig_count}/{n_features} ({100*sig_count/n_features:.1f}%)")
-        print(f"Mean K-S statistic: {mean_ks_act:.4f}")
-        
-        per_activity_results.append(activity_ks_df)
-
-     # Combine all per-activity results
-    if per_activity_results:
-        all_activity_ks = pd.concat(per_activity_results, ignore_index=True)
-        activity_ks_path = os.path.join(output_dir, f'ks_test_per_activity_{activity_subset}.csv')
-        all_activity_ks.to_csv(activity_ks_path, index=False)
-        print(f"\n Saved: {activity_ks_path}")
-    
-    # ==== VISUALIZATION ====
-    plot_ks_distribution(ks_df, activity_subset, output_dir)
-    plot_per_activity_ks(per_activity_results, activity_subset, output_dir)
-    
-    print("\n" + "=" * 80)
-    
-    return ks_df, per_activity_results
-
-# ============================================================================
-# VISUALIZATION: K-S DISTRIBUTION
-# ============================================================================
-def plot_ks_distribution(ks_df, activity_subset, output_dir):
-    """Plot distribution of K-S statistics"""
-     
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-     # Histogram of K-S statistics
-    axes[0].hist(ks_df['ks_statistic'], bins=30, edgecolor='black', alpha=0.7)
-    axes[0].axvline(ks_df['ks_statistic'].median(), color='red', 
-                    linestyle='--', label=f'Median: {ks_df["ks_statistic"].median():.3f}')
-    axes[0].set_xlabel('K-S Statistic')
-    axes[0].set_ylabel('Number of Features')
-    axes[0].set_title(f'Distribution of K-S Statistics ({activity_subset.upper()})')
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
-    
-    # Significance breakdown
-    sig_counts = ks_df['significant'].value_counts()
-    colors = ['#d62728' if x else '#2ca02c' for x in [True, False]]
-    axes[1].bar(['Significant\n(p < 0.05)', 'Not Significant\n(p ≥ 0.05)'], 
-                [sig_counts.get(True, 0), sig_counts.get(False, 0)],
-                color=colors, alpha=0.7, edgecolor='black')
-    axes[1].set_ylabel('Number of Features')
-    axes[1].set_title('Statistical Significance of Domain Shift')
-    axes[1].grid(True, alpha=0.3, axis='y')
-    
-    # Add percentages on bars
-    total = len(ks_df)
-    for i, (val, count) in enumerate([(True, sig_counts.get(True, 0)), 
-                                       (False, sig_counts.get(False, 0))]):
-        pct = 100 * count / total
-        axes[1].text(i, count + total*0.02, f'{count}\n({pct:.1f}%)', 
-                    ha='center', va='bottom', fontweight='bold')
-    
-    plt.tight_layout()
-    save_path = os.path.join(output_dir, f'ks_distribution_{activity_subset}.png')
+    save_path = os.path.join(output_dir, f'confusion_matrix_{dataset_type}.png')
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f" Saved: {save_path}")
+    print(f"\n  Saved confusion matrix: {save_path}")
+    plt.show()
     plt.close()
 
+# ===================================================================================
+# STEP 6: PERFORMANCE DEGRADATION ANALYSIS (Document and Visualize performance drop)
+# ===================================================================================
+def analyze_performance_degradation(train_acc, test_acc, dataset_type, output_dir):
+    print("\n" + "=" * 80)
+    print("PERFORMANCE DEGRADATION ANALYSIS")
+    print("=" * 80)
 
+    degradation = train_acc - test_acc
+    degradation_pct = (degradation / train_acc) * 100
+    
+    print(f"Configuration: {dataset_type.upper()}")
+    print(f"  Source Domain Accuracy (UCI HAR): {train_acc:.4f} ({train_acc*100:.2f}%)")
+    print(f"  Target Domain Accuracy (WISDM):   {test_acc:.4f} ({test_acc*100:.2f}%)")
+    print(f"  Absolute Degradation:              {degradation:.4f} ({degradation*100:.2f}%)")
+    print(f"  Relative Degradation:              {degradation_pct:.2f}% of source performance")
 
-
-def plot_per_activity_ks(per_activity_results, activity_subset, output_dir):
-    """Plot per-activity K-S statistics comparison"""
-
-    if not per_activity_results:
-        return
+    # Visualization
+    fig, ax = plt.subplots(figsize=(8, 6))
     
-    # Calculate mean K-S per activity
-    activity_means = []
-    for df in per_activity_results:
-        activity = df['activity'].iloc[0]
-        mean_ks = df['ks_statistic'].mean()
-        sig_pct = 100 * df['significant'].sum() / len(df)
-        activity_means.append({
-            'activity': activity,
-            'mean_ks': mean_ks,
-            'sig_percentage': sig_pct
-        })
+    accuracies = [train_acc, test_acc]
+    labels = ['Source\n(UCI HAR)', 'Target\n(WISDM)']
+    colors = ['#2ecc71', '#e74c3c']
     
-    summary_df = pd.DataFrame(activity_means).sort_values('mean_ks', ascending=False)
+    bars = ax.bar(labels, accuracies, color=colors, alpha=0.7, edgecolor='black', linewidth=2)
     
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    # Add values on bars
+    for bar, acc in zip(bars, accuracies):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{acc:.2%}',
+                ha='center', va='bottom', fontsize=14, fontweight='bold')
     
-    # Mean K-S statistic per activity
-    axes[0].barh(summary_df['activity'], summary_df['mean_ks'], 
-                 color='steelblue', alpha=0.7, edgecolor='black')
-    axes[0].set_xlabel('Mean K-S Statistic')
-    axes[0].set_title(f'Domain Shift by Activity ({activity_subset.upper()})')
-    axes[0].grid(True, alpha=0.3, axis='x')
+    # Add degradation arrow
+    ax.annotate('', xy=(1, test_acc), xytext=(0, train_acc),
+                arrowprops=dict(arrowstyle='<->', color='red', lw=2))
+    ax.text(0.5, (train_acc + test_acc)/2, 
+            f'Degradation:\n{degradation:.2%}\n({degradation_pct:.1f}%)',
+            ha='center', va='center', fontsize=11, 
+            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
     
-    # Percentage of significant features per activity
-    axes[1].barh(summary_df['activity'], summary_df['sig_percentage'],
-                 color='coral', alpha=0.7, edgecolor='black')
-    axes[1].set_xlabel('% Features with Significant Shift (p < 0.05)')
-    axes[1].set_title('Statistical Significance by Activity')
-    axes[1].grid(True, alpha=0.3, axis='x')
+    ax.set_ylabel('Accuracy', fontsize=12, fontweight='bold')
+    ax.set_title(f'Performance Degradation Analysis ({dataset_type.upper()})\n'
+                 f'Stacking Ensemble Model',
+                 fontsize=14, fontweight='bold')
+    ax.set_ylim(0, 1.0)
+    ax.grid(True, alpha=0.3, axis='y')
     
     plt.tight_layout()
-    save_path = os.path.join(output_dir, f'ks_per_activity_{activity_subset}.png')
+    
+    # Save
+    save_path = os.path.join(output_dir, f'performance_degradation_{dataset_type}.png')
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f" Saved: {save_path}")
+    print(f"\n  Saved degradation analysis: {save_path}")
+    plt.show()
     plt.close()
-
-
-# ============================================================================
-# STEP 5: SAVE FILTERED DATASETS FOR NEXT STAGE
-# ============================================================================
-def save_filtered_datasets(X, y, subjects, activity_subset, output_dir):
-    """Save filtered datasets for later model training"""
-
-    print("=" * 80)
-    print(f"SAVING FILTERED {activity_subset.upper()} DATASET")
-    print("=" * 80)
-
-    subset_dir = os.path.join(output_dir, activity_subset)
-    os.makedirs(subset_dir, exist_ok=True)
-
-    # Save features, labels, subjects
-    X.to_csv(os.path.join(subset_dir, 'X_filtered.txt'), sep=' ', index=False, header=False)
-    y[['activity']].to_csv(os.path.join(subset_dir, 'y_filtered.txt'), index=False, header=False)
-    subjects.to_csv(os.path.join(subset_dir, 'subject_filtered.txt'), index=False, header=False)
-
-    # Save activity mapping
-    unique_activities = sorted(y['activity_name'].unique())
-    activity_mapping = {act: (y[y['activity_name']==act]['activity'].iloc[0]) 
-                       for act in unique_activities}
     
-    mapping_df = pd.DataFrame([
-        {'label': label, 'activity': act} 
-        for act, label in sorted(activity_mapping.items(), key=lambda x: x[1])
-    ])
-    mapping_df.to_csv(os.path.join(subset_dir, 'activity_mapping.csv'), index=False)
+    print("=" * 80 + "\n")
     
-    print(f"  Saved filtered dataset to: {subset_dir}/")
-    print(f"  Files: X_filtered.txt, y_filtered.txt, subject_filtered.txt, activity_mapping.csv")
-    print()
+    return degradation, degradation_pct
 
 # ============================================================================
-# MAIN PIPELINE (DATA PREP & K-S TESTS ONLY)
+# MAIN PIPELINE FUNCTION
 # ============================================================================
-def run_data_prep_and_ks_tests(uci_dir, wisdm_dir, activity_subset='3class', output_dir='results'):
+def run_cross_dataset_evaluation(data_dir, dataset_type='3class', output_dir='results'):
     """
-    Stage 1 & 2: Data preparation and K-S tests
-    NO MODEL TRAINING YET
+    Complete Stage 3 pipeline: Train on UCI HAR, Test on WISDM
     """
+
     print("\n")
-    print("+" + "=" * 78 + "+")
-    print("|" + " " * 15 + "DATA PREPARATION & K-S TESTING" + " " * 32 + "|")
-    print("|" + " " * 25 + f"Mode: {activity_subset.upper()}" + " " * (52 - len(activity_subset)) + "|")
-    print("+" + "=" * 78 + "+")
+    print("+" + "-" * 78 + "+")
+    print("|" + " " * 20 + "STAGE 3: CROSS-DATASET EVALUATION" + " " * 25 + "|")
+    print("|" + " " * 25 + f"Mode: {dataset_type.upper()}" + " " * (52 - len(dataset_type)) + "|")
+    print("+" + "-" * 78 + "+")
     print("\n")
 
-    # Load data
-    X_uci, y_uci, subj_uci, labels = load_uci_har_data(uci_dir)
-    X_wisdm, y_wisdm, subj_wisdm, _ = load_wisdm_data(wisdm_dir)
-
-    # Filter to desired activities
-    X_uci_filt, y_uci_filt, subj_uci_filt, act_map_uci = filter_activities(X_uci, y_uci, subj_uci, activity_subset)
-    X_wisdm_filt, y_wisdm_filt, subj_wisdm_filt, act_map_wisdm = filter_activities(X_wisdm, y_wisdm, subj_wisdm, activity_subset)
-
-    # K-S tests
-    ks_overall, ks_per_activity = perform_ks_tests(X_uci_filt, X_wisdm_filt, y_uci_filt, y_wisdm_filt,
-        activity_subset, output_dir=os.path.join(output_dir, activity_subset))
+    # Step 1: Load data
+    X_train, y_train, X_test, y_test, activity_labels = load_filtered_datasets(data_dir, dataset_type)
     
-    # Save filtered datasets for next stage
-    save_filtered_datasets(X_uci_filt, y_uci_filt, subj_uci_filt, f'{activity_subset}_uci', output_dir)
-    save_filtered_datasets(X_wisdm_filt, y_wisdm_filt, subj_wisdm_filt, f'{activity_subset}_wisdm', output_dir)
+    # Step 2: Build model
+    model = build_stacking_ensemble()
+    
+    # Step 3: Train on UCI HAR
+    model, train_accuracy = train_model(model, X_train, y_train)
+    
+    # Step 4: Evaluate on WISDM
+    result_dir = os.path.join(output_dir, f'stage3_{dataset_type}')
+    test_accuracy, cm = evaluate_on_target(model, X_test, y_test, activity_labels, dataset_type, result_dir)
+
+    # Step 5: Performance degradation analysis
+    degradation, degradation_pct = analyze_performance_degradation(train_accuracy, test_accuracy, dataset_type, result_dir)
 
     # Final summary
     print("\n" + "=" * 80)
     print("SUMMARY")
     print("=" * 80)
-    print(f"Configuration: {activity_subset.upper()}")
-    print(f"UCI HAR (source): {len(X_uci_filt):,} samples")
-    print(f"WISDM (target): {len(X_wisdm_filt):,} samples")
-    print(f"\nDomain Shift Analysis:")
-    sig_count = ks_overall['significant'].sum()
-    print(f"  Significant features: {sig_count}/{len(ks_overall)} ({100*sig_count/len(ks_overall):.1f}%)")
-    print(f"  Mean K-S statistic: {ks_overall['ks_statistic'].mean():.4f}")
-    print(f"\n Datasets prepared and saved for model training (Stage 3)")
+    print(f"Configuration: {dataset_type.upper()}")
+    print(f"Training samples (UCI HAR): {len(X_train):,}")
+    print(f"Testing samples (WISDM): {len(X_test):,}")
+    print(f"\nResults:")
+    print(f"  Source accuracy: {train_accuracy:.2%}")
+    print(f"  Target accuracy: {test_accuracy:.2%}")
+    print(f"  Degradation: {degradation:.2%} ({degradation_pct:.1f}% relative)")
+    print(f"\nGenerated files in {result_dir}/:")
+    print(f"  - confusion_matrix_{dataset_type}.png")
+    print(f"  - performance_degradation_{dataset_type}.png")
     print("=" * 80 + "\n")
     
-    return ks_overall, ks_per_activity
+    return {
+        'model': model,
+        'train_accuracy': train_accuracy,
+        'test_accuracy': test_accuracy,
+        'degradation': degradation,
+        'confusion_matrix': cm,
+        'activity_labels': activity_labels
+    }
+
+
+# ============================================================================
+# STEP 7: COMPARATIVE ANALYSIS (3-Class vs 6-Class)
+# ============================================================================
+def compare_3class_vs_6class(results_3class, results_6class, output_dir):
+    print("\n" + "=" * 80)
+    print("COMPARATIVE ANALYSIS: 3-CLASS vs 6-CLASS")
+    print("=" * 80)
+
+    # Create comparison table
+    comparison = pd.DataFrame({
+        'Configuration': ['3-Class', '6-Class'],
+        'Source Accuracy': [results_3class['train_accuracy'], results_6class['train_accuracy']],
+        'Target Accuracy': [results_3class['test_accuracy'], results_6class['test_accuracy']],
+        'Degradation': [results_3class['degradation'], results_6class['degradation']]
+    })
+    
+    print("\nPerformance Comparison:")
+    print(comparison.to_string(index=False))
+
+    # Visualization
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # Left: Accuracy comparison
+    x = np.arange(2)
+    width = 0.35
+    
+    axes[0].bar(x - width/2, 
+                [results_3class['train_accuracy'], results_6class['train_accuracy']], 
+                width, label='Source (UCI HAR)', color='#2ecc71', alpha=0.8)
+    axes[0].bar(x + width/2, 
+                [results_3class['test_accuracy'], results_6class['test_accuracy']], 
+                width, label='Target (WISDM)', color='#e74c3c', alpha=0.8)
+    
+    axes[0].set_ylabel('Accuracy', fontsize=12, fontweight='bold')
+    axes[0].set_title('Accuracy Comparison', fontsize=13, fontweight='bold')
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(['3-Class', '6-Class'])
+    axes[0].legend()
+    axes[0].set_ylim(0, 1.0)
+    axes[0].grid(True, alpha=0.3, axis='y')
+    
+    # Right: Degradation comparison
+    degradations = [results_3class['degradation'], results_6class['degradation']]
+    bars = axes[1].bar(['3-Class', '6-Class'], degradations, 
+                       color=['#3498db', '#9b59b6'], alpha=0.8, edgecolor='black')
+    
+    for bar, deg in zip(bars, degradations):
+        height = bar.get_height()
+        axes[1].text(bar.get_x() + bar.get_width()/2., height,
+                    f'{deg:.2%}',
+                    ha='center', va='bottom', fontsize=12, fontweight='bold')
+    
+    axes[1].set_ylabel('Performance Degradation', fontsize=12, fontweight='bold')
+    axes[1].set_title('Domain Shift Impact', fontsize=13, fontweight='bold')
+    axes[1].grid(True, alpha=0.3, axis='y')
+    
+    plt.tight_layout()
+    
+    # Save
+    save_path = os.path.join(output_dir, 'comparison_3class_vs_6class.png')
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    print(f"\n  Saved comparison: {save_path}")
+    plt.show()
+    plt.close()
+    
+    print("\nKey Insights:")
+    if results_3class['test_accuracy'] > results_6class['test_accuracy']:
+        print("  - 3-class shows higher target accuracy (perfect-match activities)")
+    else:
+        print("  - 6-class shows competitive accuracy despite approximate matches")
+    
+    print(f"   Degradation difference: {abs(results_3class['degradation'] - results_6class['degradation']):.2%}")
+    print("=" * 80 + "\n")
+
 
 # ============================================================================
 # USAGE
 # ============================================================================
 if __name__ == "__main__":
-    # UPDATE THESE PATHS
-    UCI_HAR_DIR = r"C:\Users\tomin\OneDrive\Machine Learning\UCI HAR Dataset"
-    WISDM_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection"
-    OUTPUT_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results"
-
-    # ==== PRIMARY: 3-CLASS ANALYSIS ====
+    
+    # UPDATE THIS PATH - where your Stage 2 filtered datasets are
+    DATA_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results"
+    OUTPUT_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Stage3_cross_val_Results"
+    
+    # ==== PRIMARY: 3-CLASS EVALUATION ====
     print("\n" + "= " * 40)
-    print("PRIMARY ANALYSIS: 3-CLASS (PERFECT MATCHES)")
+    print("PRIMARY ANALYSIS: 3-CLASS CROSS-DATASET EVALUATION")
     print("= " * 40 + "\n")
     
-    ks_3class, per_act_3class = run_data_prep_and_ks_tests(
-        uci_dir=UCI_HAR_DIR,
-        wisdm_dir=WISDM_DIR,
-        activity_subset='3class',
+    results_3class = run_cross_dataset_evaluation(
+        data_dir=DATA_DIR,
+        dataset_type='3class',
         output_dir=OUTPUT_DIR
     )
     
-    # ==== SECONDARY: 6-CLASS ANALYSIS ====
-    print("\n" + "=" * 40)
-    print("SECONDARY ANALYSIS: 6-CLASS (ALL ACTIVITIES)")
+    # ==== SECONDARY: 6-CLASS EVALUATION ====
+    print("\n" + "= " * 40)
+    print("SECONDARY ANALYSIS: 6-CLASS CROSS-DATASET EVALUATION")
     print("= " * 40 + "\n")
     
-    ks_6class, per_act_6class = run_data_prep_and_ks_tests(
-        uci_dir=UCI_HAR_DIR,
-        wisdm_dir=WISDM_DIR,
-        activity_subset='6class',
+    results_6class = run_cross_dataset_evaluation(
+        data_dir=DATA_DIR,
+        dataset_type='6class',
         output_dir=OUTPUT_DIR
     )
+    
+    # ==== COMPARATIVE ANALYSIS ====
+    compare_3class_vs_6class(results_3class, results_6class, OUTPUT_DIR)
     
     print("\n" + "=" * 80)
-    print("DATA PREPARATION COMPLETE")
+    print("  STAGE 3 COMPLETE - ALL RESULTS GENERATED")
     print("=" * 80)
+    print(f"\nAll results saved to: {OUTPUT_DIR}/")
     print("\nGenerated files:")
-    print(f"  {OUTPUT_DIR}/3class/ - 3-class datasets & K-S results")
-    print(f"  {OUTPUT_DIR}/6class/ - 6-class datasets & K-S results")
-    print("\nNext: Use these filtered datasets for model training (Stage 3)")
+    print("  - stage3_3class/confusion_matrix_3class.png")
+    print("  - stage3_3class/performance_degradation_3class.png")
+    print("  - stage3_6class/confusion_matrix_6class.png")
+    print("  - stage3_6class/performance_degradation_6class.png")
+    print("\n  - comparison_3class_vs_6class.png")
     print("=" * 80)
