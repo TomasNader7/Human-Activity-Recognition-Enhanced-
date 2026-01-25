@@ -11,3 +11,6 @@ __pycache__/
 
 # Experiment results
 Stage3_cross_val_Results/
+
+# Archived old experiments (Legacy)
+archive/old_experiments/
