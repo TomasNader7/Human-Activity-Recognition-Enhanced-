@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import StackingClassifier, RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import Perceptron, LogisticRegression
-from sklearn.feature_selection import SelectKBest, mutual_info_classif
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
@@ -26,35 +26,83 @@ plt.rcParams['figure.figsize'] = (12, 10)
 # STEP 1: LOAD FILTERED DATASETS
 # ============================================================================
 def load_filtered_datasets(data_dir, dataset_type='3class'):
-
+    """Load datasets with PROPER feature alignment - FIXED VERSION"""
+    
     print("=" * 80)
     print(f"LOADING FILTERED {dataset_type.upper()} DATASETS")
     print("=" * 80)
-
+    
     # Load UCI HAR (source domain)
     uci_dir = os.path.join(data_dir, f'{dataset_type}_uci')
     X_train = pd.read_csv(os.path.join(uci_dir, 'X_filtered.txt'), sep=r'\s+', header=None)
     y_train = pd.read_csv(os.path.join(uci_dir, 'y_filtered.txt'), header=None, names=['activity'])
-
+    
     # Load WISDM (target domain)
     wisdm_dir = os.path.join(data_dir, f'{dataset_type}_wisdm')
     X_test = pd.read_csv(os.path.join(wisdm_dir, 'X_filtered.txt'), sep=r'\s+', header=None)
     y_test = pd.read_csv(os.path.join(wisdm_dir, 'y_filtered.txt'), header=None, names=['activity'])
-
+    
     # Load activity mapping
     activity_mapping = pd.read_csv(os.path.join(uci_dir, 'activity_mapping.csv'))
     activity_labels = dict(zip(activity_mapping['label'], activity_mapping['activity']))
-
-    # Align features using feature selection on UCI HAR to match WISDM's feature count
-    if X_train.shape[1] != X_test.shape[1]:
-        print(f"Feature mismatch detected: UCI HAR has {X_train.shape[1]} features, WISDM has {X_test.shape[1]} features")
-        target_features = X_test.shape[1]
-        selector = SelectKBest(score_func=mutual_info_classif, k=target_features)
-        X_train_selected = selector.fit_transform(X_train, y_train['activity'])
-        # Convert back to DataFrame for consistency
-        X_train = pd.DataFrame(X_train_selected)
-        print(f"Selected top {target_features} features from UCI HAR using mutual information for compatibility.")
     
+    print(f"Original shapes:")
+    print(f"  UCI HAR: {X_train.shape}")
+    print(f"  WISDM: {X_test.shape}")
+    
+    # =====================================================================
+    # FIX #1: PROPER FEATURE ALIGNMENT
+    # =====================================================================
+    print("\n" + "=" * 80)
+    print("FIXING FEATURE ALIGNMENT")
+    print("=" * 80)
+    
+    n_uci = X_train.shape[1]
+    n_wisdm = X_test.shape[1]
+    
+    if n_uci != n_wisdm:
+        print(f"   Feature mismatch detected:")
+        print(f"   UCI HAR: {n_uci} features")
+        print(f"   WISDM: {n_wisdm} features")
+        print(f"\n Solution: Using first {n_wisdm} features from both datasets")
+        print(f"   (Position-based alignment - assumes similar feature order)")
+        
+        # Use only first N features where N = min(uci, wisdm)
+        n_common = min(n_uci, n_wisdm)
+        X_train = X_train.iloc[:, :n_common]
+        X_test = X_test.iloc[:, :n_common]
+        
+        print(f"\n  Aligned to {n_common} features")
+    else:
+        print(f"  Features already aligned ({n_uci} features)")
+    
+    # =====================================================================
+    # FIX #2: PROPER STANDARDIZATION
+    # =====================================================================
+    print("\n" + "=" * 80)
+    print("APPLYING FEATURE STANDARDIZATION")
+    print("=" * 80)
+    print("Using StandardScaler (fit on train, transform both)")
+    
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Convert back to DataFrame
+    X_train = pd.DataFrame(X_train_scaled, columns=X_train.columns)
+    X_test = pd.DataFrame(X_test_scaled, columns=X_test.columns)
+    
+    print(f"   Standardization complete")
+    print(f"   Train mean: {X_train.mean().mean():.6f} (should be ~0)")
+    print(f"   Train std: {X_train.std().mean():.6f} (should be ~1)")
+    print(f"   Test mean: {X_test.mean().mean():.6f} (will differ due to domain shift)")
+    
+    # =====================================================================
+    # FINAL SUMMARY
+    # =====================================================================
+    print("\n" + "=" * 80)
+    print("DATASET LOADING COMPLETE")
+    print("=" * 80)
     print(f"  UCI HAR (Source - Training):")
     print(f"  Shape: {X_train.shape}")
     print(f"  Samples per activity:")
@@ -62,17 +110,16 @@ def load_filtered_datasets(data_dir, dataset_type='3class'):
         count = (y_train['activity'] == label).sum()
         print(f"    {label}. {activity}: {count:,}")
     
-    print(f"\n  WISDM (Target - Testing):")
+    print(f"\n WISDM (Target - Testing):")
     print(f"  Shape: {X_test.shape}")
     print(f"  Samples per activity:")
     for label, activity in sorted(activity_labels.items()):
         count = (y_test['activity'] == label).sum()
         print(f"    {label}. {activity}: {count:,}")
     
-    print()
+    print("=" * 80 + "\n")
     
     return X_train, y_train, X_test, y_test, activity_labels
-
 
 # ===========================================================================================
 # STEP 2: BUILD STACKING ENSEMBLE MODEL (From Research Paper - Human_Activity_Recognition.py)

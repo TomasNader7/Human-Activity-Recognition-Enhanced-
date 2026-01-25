@@ -1,0 +1,16 @@
+# Generated feature outputs
+hapt_3class_output/
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.vs/
+.vscode/
+
+# Experiment results
+Stage3_cross_val_Results/
+
+# Archived old experiments (Legacy)
+archive/old_experiments/
