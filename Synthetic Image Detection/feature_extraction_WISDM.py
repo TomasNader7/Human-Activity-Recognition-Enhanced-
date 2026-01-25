@@ -426,6 +426,13 @@ def main(raw_folder_path, output_dir, subset_size=None):
         # Step 5: UCI format
         X, y, subjects, uci_label_mapping = prepare_uci_har_format(features_df_norm)
         
+        # === NEW: Save feature names for later alignment with UCI extractor ===
+        names_path = os.path.join(output_dir, "feature_names_61.txt")
+        with open(names_path, "w") as f:
+            for i, c in enumerate(X.columns, 1):
+                f.write(f"{i} {c}\n")
+        print(f"Saved WISDM feature names -> {names_path}")
+
         # Step 6: Statistical validation
         stats_summary = statistical_validation(features_df_norm, output_dir)
         
