@@ -1,0 +1,10 @@
+# Generated feature outputs
+hapt_3class_output/
+
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.vs/
+.vscode/
