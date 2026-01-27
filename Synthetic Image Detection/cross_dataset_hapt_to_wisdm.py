@@ -1,0 +1,126 @@
+# Load data
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+# Re-using stacking ensemble model from Human_Activity_Recognition.py
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression, Perceptron
+from xgboost import XGBClassifier
+
+# Load HAPT (source)
+X_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output\X_hapt.txt")
+y_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output\y_hapt.txt").astype(int)
+
+# Load WISDM (target)
+X_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm\X_filtered.txt")
+y_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm\y_filtered.txt").astype(int)
+
+# --- FIX WISDM LABEL SEMANTICS (CRITICAL) ---
+# WISDM mapping: 1=SITTING, 2=STANDING, 3=WALKING
+# Desired mapping: 1=WALKING, 2=SITTING, 3=STANDING
+remap = {
+    1: 2,  # SITTING  -> 2
+    2: 3,  # STANDING -> 3
+    3: 1   # WALKING  -> 1
+}
+y_test = np.vectorize(remap.get)(y_test)
+# ------------------------------------------
+
+print("Train:", X_train.shape, y_train.shape, "labels:", sorted(set(y_train)))
+print("Test :", X_test.shape, y_test.shape, "labels:", sorted(set(y_test)))
+
+# Normalize features to [-1, 1]
+
+scaler = MinMaxScaler(feature_range=(-1, 1))
+X_train = scaler.fit_transform(X_train)
+X_test  = scaler.transform(X_test)   
+
+
+
+
+def get_advanced_stacking_model():
+    level0 = [
+        ('perceptron', Perceptron(max_iter=2000, tol=1e-3)),
+        ('random_forest', RandomForestClassifier(n_estimators=20, max_depth=5, random_state=42)),
+        ('svm', SVC(kernel='rbf', C=1.0, probability=True, random_state=42, class_weight='balanced')),
+        ('xgboost', XGBClassifier(n_estimators=20, learning_rate=0.1, random_state=42)),
+        ('gradient_boosting', GradientBoostingClassifier(n_estimators=20, learning_rate=0.1, max_depth=3, random_state=42))
+    ]
+    level1 = LogisticRegression(solver='saga', max_iter=2000, tol=1e-4, class_weight='balanced', random_state=42)
+    
+    # Stacking model with 3-fold cross-validation
+    level1 = StackingClassifier(estimators=level0, final_estimator=level1, cv=3)
+    return StackingClassifier(estimators=level0, final_estimator=level1, cv=3)
+    
+model = get_advanced_stacking_model()
+
+
+# More robust stacking ensemble
+"""
+try:
+    from xgboost import XGBClassifier
+    HAS_XGB = True
+except Exception:
+    HAS_XGB = False
+def get_stacking_ensemble(random_state: int = 42) -> StackingClassifier:
+    level0 = [
+        ("perceptron", Perceptron(max_iter=2000, tol=1e-3, random_state=random_state)),
+        ("random_forest", RandomForestClassifier(n_estimators=200, max_depth=10, random_state=random_state)),
+        ("svm", SVC(kernel="rbf", C=1.0, probability=True, random_state=random_state)),
+        ("gradient_boosting", GradientBoostingClassifier(n_estimators=200, learning_rate=0.1, max_depth=3, random_state=random_state)),
+    ]
+
+    if HAS_XGB:
+        level0.append(("xgboost", XGBClassifier(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=5,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            random_state=random_state,
+            eval_metric="mlogloss",
+        )))
+
+    level1 = LogisticRegression(solver="saga", max_iter=4000, tol=1e-4, random_state=random_state)
+
+    # Use predict_proba outputs (default) from base learners when available
+    model = StackingClassifier(
+        estimators=level0,
+        final_estimator=level1,
+        cv=3,
+        n_jobs=-1,
+        passthrough=False,
+    )
+    return model
+"""
+
+# Train on HAPT 
+model.fit(X_train, y_train)
+
+train_acc = accuracy_score(y_train, model.predict(X_train))
+print(f"HAPT train accuracy: {train_acc:.3f}")
+
+# Evaluate on WISDM
+y_pred = model.predict(X_test)
+
+"""
+Plausible Expectation:
+Likely 0.50 to 0.70
+Definitely > 0.34
+Definitely ≪ training accuracy
+"""
+test_acc = accuracy_score(y_test, y_pred)
+print(f"WISDM test accuracy: {test_acc:.3f}")
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+print("Confusion matrix:\n", cm)
+
+# Classification report
+print(classification_report(
+    y_test,
+    y_pred,
+    target_names=["WALKING", "SITTING", "STANDING"]
+))
