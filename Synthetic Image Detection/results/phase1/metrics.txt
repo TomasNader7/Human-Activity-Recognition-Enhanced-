@@ -1,0 +1,2 @@
+HAPT train accuracy: 0.7010
+WISDM test accuracy: 0.5510

@@ -3,6 +3,14 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
+# Visualization
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import recall_score
+
+
+
+
 # Re-using stacking ensemble model from Human_Activity_Recognition.py
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from sklearn.svm import SVC
@@ -124,3 +132,70 @@ print(classification_report(
     y_pred,
     target_names=["WALKING", "SITTING", "STANDING"]
 ))
+
+# Metrics and data records for documentation purposes in Phase 1 (61 features) and Phase 2 (70-80-90 features)
+
+# Accuracy recording
+import os
+
+RESULTS_DIR = "results/phase1"
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+with open(os.path.join(RESULTS_DIR, "metrics.txt"), "w") as f:
+    f.write(f"HAPT train accuracy: {train_acc:.4f}\n")
+    f.write(f"WISDM test accuracy: {test_acc:.4f}\n")
+
+
+# Raw confusion matrix plot
+labels = ["WALKING", "SITTING", "STANDING"]
+
+plt.figure(figsize=(6, 5))
+sns.heatmap(
+    cm,
+    annot=True,
+    fmt="d",
+    cmap="Blues",
+    xticklabels=labels,
+    yticklabels=labels
+)
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.title("Phase 1 – Confusion Matrix (HAPT → WISDM)")
+plt.tight_layout()
+plt.savefig(os.path.join(RESULTS_DIR, "confusion_matrix_raw.png"), dpi=300)
+plt.close()
+
+# Normalized confusion matrix plot
+cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
+
+plt.figure(figsize=(6, 5))
+sns.heatmap(
+    cm_norm,
+    annot=True,
+    fmt=".2f",
+    cmap="Blues",
+    xticklabels=labels,
+    yticklabels=labels
+)
+plt.xlabel("Predicted")
+plt.ylabel("True")
+plt.title("Phase 1 – Normalized Confusion Matrix")
+plt.tight_layout()
+plt.savefig(os.path.join(RESULTS_DIR, "confusion_matrix_normalized.png"), dpi=300)
+plt.close()
+
+# Recall = how well each activity transfers.
+recall = recall_score(y_test, y_pred, average=None)
+
+plt.figure(figsize=(6, 4))
+plt.bar(labels, recall, color=["tab:blue", "tab:orange", "tab:green"])
+plt.ylim(0, 1.05)
+plt.ylabel("Recall")
+plt.title("Phase 1 – Per-Class Recall (HAPT → WISDM)")
+
+for i, v in enumerate(recall):
+    plt.text(i, v + 0.02, f"{v:.2f}", ha="center", fontsize=10)
+
+plt.tight_layout()
+plt.savefig(os.path.join(RESULTS_DIR, "recall_per_class.png"), dpi=300)
+plt.close()
