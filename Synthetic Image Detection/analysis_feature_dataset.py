@@ -13,6 +13,8 @@ import seaborn as sns
 from scipy import stats
 import os
 
+PHASE_TAG = "phase2"
+
 # Set style 
 sns.set_style("whitegrid")
 plt.rcParams['figure.figsize'] = (12, 8)
@@ -416,8 +418,8 @@ def run_data_prep_and_ks_tests(uci_dir, wisdm_dir, activity_subset='3class', out
         activity_subset, output_dir=os.path.join(output_dir, activity_subset))
     
     # Save filtered datasets for next stage
-    save_filtered_datasets(X_uci_filt, y_uci_filt, subj_uci_filt, f'{activity_subset}_uci', output_dir)
-    save_filtered_datasets(X_wisdm_filt, y_wisdm_filt, subj_wisdm_filt, f'{activity_subset}_wisdm', output_dir)
+    save_filtered_datasets(X_uci_filt, y_uci_filt, subj_uci_filt, f'{activity_subset}_uci_{PHASE_TAG}', output_dir)
+    save_filtered_datasets(X_wisdm_filt, y_wisdm_filt, subj_wisdm_filt, f'{activity_subset}_wisdm_{PHASE_TAG}', output_dir)
 
     # Final summary
     print("\n" + "=" * 80)
@@ -440,8 +442,8 @@ def run_data_prep_and_ks_tests(uci_dir, wisdm_dir, activity_subset='3class', out
 # ============================================================================
 if __name__ == "__main__":
     # UPDATE THESE PATHS
-    UCI_HAR_DIR = r"C:\Users\tomin\OneDrive\Machine Learning\UCI HAR Dataset"
-    WISDM_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection"
+    UCI_HAR_DIR = r"C:\Users\tomin\OneDrive\Machine Learning\Thesis\UCI HAR Dataset"
+    WISDM_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\WISDM_phase2"
     OUTPUT_DIR = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results"
 
     # ==== PRIMARY: 3-CLASS ANALYSIS ====

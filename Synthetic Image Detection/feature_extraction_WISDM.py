@@ -1,4 +1,5 @@
 # Goal: Convert raw WISDM readings into a feature table compatible with UCI HAR.
+PHASE_TAG = "phase2"
 
 import pandas as pd
 import numpy as np
@@ -154,8 +155,6 @@ def segment_data_into_windows(df, window_size=128, overlap=0.5):
 # ============================================================================
 def compute_features_for_window(windows):
 
-    print("Step 3: Computing features for a sample window...")
-
     features = {}
 
     # Extract individual axes
@@ -178,7 +177,54 @@ def compute_features_for_window(windows):
 
        
        
-       
+    # ============================
+    # PHASE 2: POSTURE FEATURES
+    # ============================
+
+    # --- Gravity / orientation ---
+    gx, gy, gz = np.mean(x), np.mean(y), np.mean(z)
+    g_norm = np.sqrt(gx**2 + gy**2 + gz**2) + 1e-12
+
+    ux, uy, uz = gx / g_norm, gy / g_norm, gz / g_norm
+
+    features["g_norm"] = g_norm
+    features["g_unit_x"] = ux
+    features["g_unit_y"] = uy
+    features["g_unit_z"] = uz
+
+    features["tilt_x"] = np.arccos(np.clip(ux, -1.0, 1.0))
+    features["tilt_y"] = np.arccos(np.clip(uy, -1.0, 1.0))
+    features["tilt_z"] = np.arccos(np.clip(uz, -1.0, 1.0))
+
+    # --- Vertical / horizontal decomposition ---
+    a = windows
+    g_unit = np.array([ux, uy, uz])
+
+    a_vert = a @ g_unit
+    a_horiz = np.sqrt(np.maximum(0.0, np.sum(a*a, axis=1) - a_vert*a_vert))
+
+    features["vert_energy"] = np.mean(a_vert**2)
+    features["vert_std"] = np.std(a_vert)
+    features["horiz_energy"] = np.mean(a_horiz**2)
+    features["vert_horiz_ratio"] = features["vert_energy"] / (features["horiz_energy"] + 1e-12)
+
+    # --- Jerk features ---
+    jx = np.diff(x)
+    jy = np.diff(y)
+    jz = np.diff(z)
+    jerk_mag = np.sqrt(jx**2 + jy**2 + jz**2)
+
+    features["jerk_mag_mean"] = np.mean(jerk_mag)
+    features["jerk_mag_std"] = np.std(jerk_mag)
+    features["jerk_mag_energy"] = np.mean(jerk_mag**2)
+    features["jerk_mag_max"] = np.max(jerk_mag)
+    features["jerk_mag_iqr"] = np.percentile(jerk_mag, 75) - np.percentile(jerk_mag, 25)
+
+    # Zero-crossing rate (micro-adjustments)
+    features["jerk_zero_crossings_x"] = np.mean(np.diff(np.sign(jx)) != 0)
+    features["jerk_zero_crossings_y"] = np.mean(np.diff(np.sign(jy)) != 0)
+    features["jerk_zero_crossings_z"] = np.mean(np.diff(np.sign(jz)) != 0)   
+    
     # === MAGNITUDE-BASED FEATURES (7 features) ===
     magnitude = np.sqrt(x**2 + y**2 + z**2)
     features['magnitude_mean'] = np.mean(magnitude)
@@ -234,6 +280,7 @@ def compute_features_for_window(windows):
         features[f'{axis_name}_entropy'] = entropy
 
     # Total: 30 + 7 + 3 + 21 + 3 = 64 features (expandable to ~70-80)
+    
     
     return features
 
@@ -400,7 +447,8 @@ def save_to_uci_format(features_df, X, y, subjects, uci_label_mapping, output_di
 # MAIN EXECUTION
 # ============================================================================
 def main(raw_folder_path, output_dir, subset_size=None):
-
+    
+    os.makedirs(output_dir, exist_ok=True)
     print("=" * 80)
     print("WISDM to UCI HAR Feature Extraction Pipeline")
     print("Focus: Phone accelerometer only, 6 UCI-mappable activities, ~70 features")
@@ -426,12 +474,12 @@ def main(raw_folder_path, output_dir, subset_size=None):
         # Step 5: UCI format
         X, y, subjects, uci_label_mapping = prepare_uci_har_format(features_df_norm)
         
-        # === NEW: Save feature names for later alignment with UCI extractor ===
-        names_path = os.path.join(output_dir, "feature_names_61.txt")
-        with open(names_path, "w") as f:
-            for i, c in enumerate(X.columns, 1):
-                f.write(f"{i} {c}\n")
-        print(f"Saved WISDM feature names -> {names_path}")
+        # # === NEW: Save feature names for later alignment with UCI extractor ===
+        # names_path = os.path.join(output_dir, "feature_names_phase2.txt")
+        # with open(names_path, "w") as f:
+        #     for i, c in enumerate(X.columns, 1):
+        #         f.write(f"{i} {c}\n")
+        # print(f"Saved WISDM feature names -> {names_path}")
 
         # Step 6: Statistical validation
         stats_summary = statistical_validation(features_df_norm, output_dir)
@@ -468,8 +516,9 @@ def main(raw_folder_path, output_dir, subset_size=None):
 
 if __name__ == "__main__":
 
-    raw_folder = r"C:\Users\tomin\OneDrive\Machine Learning\Extension_research\wisdm+smartphone+and+smartwatch+activity+and+biometrics+dataset\wisdm-dataset\wisdm-dataset\raw"
-    output_folder = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection"
+    raw_folder = r"C:\Users\tomin\OneDrive\Machine Learning\Thesis\wisdm+smartphone+and+smartwatch+activity+and+biometrics+dataset\wisdm-dataset\wisdm-dataset\raw"
+    output_folder = r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\wisdm_phase2"
+
     
     # Run full pipeline (remove subset_size for complete dataset)
     features_df, X, y, activity_mapping = main(raw_folder, output_folder)
