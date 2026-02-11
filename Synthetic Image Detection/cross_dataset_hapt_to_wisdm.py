@@ -18,22 +18,28 @@ from sklearn.linear_model import LogisticRegression, Perceptron
 from xgboost import XGBClassifier
 
 # Load HAPT (source)
-X_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output\X_hapt.txt")
-y_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output\y_hapt.txt").astype(int)
+X_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output_phase2\X_hapt.txt")
+y_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output_phase2\y_hapt.txt").astype(int)
 
 # Load WISDM (target)
-X_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm\X_filtered.txt")
-y_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm\y_filtered.txt").astype(int)
+X_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm_phase2\X_filtered.txt")
+y_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm_phase2\y_filtered.txt").astype(int)
 
 # --- FIX WISDM LABEL SEMANTICS (CRITICAL) ---
 # WISDM mapping: 1=SITTING, 2=STANDING, 3=WALKING
 # Desired mapping: 1=WALKING, 2=SITTING, 3=STANDING
+
+print("HAPT labels:", np.unique(y_train))
+print("WISDM labels before remap:", np.unique(y_test))
+print("WISDM label counts before remap:", {label: np.sum(y_test == label) for label in np.unique(y_test)})
 remap = {
     1: 2,  # SITTING  -> 2
     2: 3,  # STANDING -> 3
     3: 1   # WALKING  -> 1
 }
 y_test = np.vectorize(remap.get)(y_test)
+print("WISDM labels after remap:", np.unique(y_test))
+print("WISDM label counts after remap:", {label: np.sum(y_test == label) for label in np.unique(y_test)})
 # ------------------------------------------
 
 print("Train:", X_train.shape, y_train.shape, "labels:", sorted(set(y_train)))

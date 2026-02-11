@@ -187,7 +187,7 @@ def export_uci_style(df_norm: pd.DataFrame, output_dir: str):
 if __name__ == "__main__":
     # python feature_extraction_HAPT.py
     HAPT_ROOT = r"C:\Users\tomin\OneDrive\Machine Learning\Thesis\smartphone+based+recognition+of+human+activities+and+postural+transitions"        
-    OUTPUT_DIR = r"./hapt_3class_output"  # <-- CHANGE THIS
+    OUTPUT_DIR = r"./hapt_3class_output_phase2" 
 
     df = extract_hapt_3class_features(HAPT_ROOT, subset_segments=None, window_size=128, overlap=0.5)
     df_norm, _ = normalize_to_minus1_plus1(df)
