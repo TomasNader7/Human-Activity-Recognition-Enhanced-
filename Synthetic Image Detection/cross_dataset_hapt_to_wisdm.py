@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix, classification_rep
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import recall_score
+import os
 
 
 
@@ -17,13 +18,23 @@ from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression, Perceptron
 from xgboost import XGBClassifier
 
+# =========================
+# RUN CONFIG
+# =========================
+PHASE_TAG = "phase1"  # change to "phase2" when running baseline 80-feature version
+
+RESULTS_DIR = os.path.join("results", PHASE_TAG)
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+LABELS = ["WALKING", "SITTING", "STANDING"]
+
 # Load HAPT (source)
-X_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output_phase2\X_hapt.txt")
-y_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output_phase2\y_hapt.txt").astype(int)
+X_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output\X_hapt.txt")
+y_train = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output\y_hapt.txt").astype(int)
 
 # Load WISDM (target)
-X_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm_phase2\X_filtered.txt")
-y_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm_phase2\y_filtered.txt").astype(int)
+X_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm\X_filtered.txt")
+y_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm\y_filtered.txt").astype(int)
 
 # --- FIX WISDM LABEL SEMANTICS (CRITICAL) ---
 # WISDM mapping: 1=SITTING, 2=STANDING, 3=WALKING
@@ -139,40 +150,54 @@ print(classification_report(
     target_names=["WALKING", "SITTING", "STANDING"]
 ))
 
+# Classification report (text)
+report_txt = classification_report(y_test, y_pred, target_names=LABELS)
+print(report_txt)
+
+with open(os.path.join(RESULTS_DIR, "classification_report.txt"), "w") as f:
+    f.write(report_txt)
+
+# Save confusion matrix as CSV too
+np.savetxt(os.path.join(RESULTS_DIR, "confusion_matrix_raw.csv"), cm, delimiter=",", fmt="%d")
+
 # Metrics and data records for documentation purposes in Phase 1 (61 features) and Phase 2 (70-80-90 features)
 
 # Accuracy recording
-import os
-
-RESULTS_DIR = "results/phase1"
-os.makedirs(RESULTS_DIR, exist_ok=True)
 
 with open(os.path.join(RESULTS_DIR, "metrics.txt"), "w") as f:
+    f.write(f"Phase: {PHASE_TAG}\n")
     f.write(f"HAPT train accuracy: {train_acc:.4f}\n")
     f.write(f"WISDM test accuracy: {test_acc:.4f}\n")
+    f.write(f"Train shape: {X_train.shape}\n")
+    f.write(f"Test shape : {X_test.shape}\n")
+    f.write(f"WISDM label counts after remap: { {label: int(np.sum(y_test == label)) for label in np.unique(y_test)} }\n")
+
 
 
 # Raw confusion matrix plot
 labels = ["WALKING", "SITTING", "STANDING"]
 
+# Raw confusion matrix plot
 plt.figure(figsize=(6, 5))
 sns.heatmap(
     cm,
     annot=True,
     fmt="d",
     cmap="Blues",
-    xticklabels=labels,
-    yticklabels=labels
+    xticklabels=LABELS,
+    yticklabels=LABELS
 )
 plt.xlabel("Predicted")
 plt.ylabel("True")
-plt.title("Phase 1 – Confusion Matrix (HAPT → WISDM)")
+plt.title(f"{PHASE_TAG.upper()} – Confusion Matrix (HAPT → WISDM)")
 plt.tight_layout()
 plt.savefig(os.path.join(RESULTS_DIR, "confusion_matrix_raw.png"), dpi=300)
 plt.close()
 
-# Normalized confusion matrix plot
-cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True)
+# Normalized confusion matrix plot (row-normalized)
+row_sums = cm.sum(axis=1, keepdims=True).astype(float)
+row_sums[row_sums == 0] = 1.0  # avoid division by zero
+cm_norm = cm.astype(float) / row_sums
 
 plt.figure(figsize=(6, 5))
 sns.heatmap(
@@ -180,24 +205,25 @@ sns.heatmap(
     annot=True,
     fmt=".2f",
     cmap="Blues",
-    xticklabels=labels,
-    yticklabels=labels
+    xticklabels=LABELS,
+    yticklabels=LABELS
 )
 plt.xlabel("Predicted")
 plt.ylabel("True")
-plt.title("Phase 1 – Normalized Confusion Matrix")
+plt.title(f"{PHASE_TAG.upper()} – Normalized Confusion Matrix (HAPT → WISDM)")
 plt.tight_layout()
 plt.savefig(os.path.join(RESULTS_DIR, "confusion_matrix_normalized.png"), dpi=300)
 plt.close()
+
 
 # Recall = how well each activity transfers.
 recall = recall_score(y_test, y_pred, average=None)
 
 plt.figure(figsize=(6, 4))
-plt.bar(labels, recall, color=["tab:blue", "tab:orange", "tab:green"])
+plt.bar(LABELS, recall)
 plt.ylim(0, 1.05)
 plt.ylabel("Recall")
-plt.title("Phase 1 – Per-Class Recall (HAPT → WISDM)")
+plt.title(f"{PHASE_TAG.upper()} – Per-Class Recall (HAPT → WISDM)")
 
 for i, v in enumerate(recall):
     plt.text(i, v + 0.02, f"{v:.2f}", ha="center", fontsize=10)
