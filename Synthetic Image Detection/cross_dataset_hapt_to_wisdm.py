@@ -9,19 +9,17 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import recall_score
 import os
 
-
-
-
 # Re-using stacking ensemble model from Human_Activity_Recognition.py
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, StackingClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression, Perceptron
 from xgboost import XGBClassifier
 
-# =========================
-# RUN CONFIG
-# =========================
-PHASE_TAG = "phase1"  # change to "phase2" when running baseline 80-feature version
+# ==================
+#     RUN CONFIG
+# ==================
+
+PHASE_TAG = "phase1"  # change to "phase1" when running baseline 80-feature version
 
 RESULTS_DIR = os.path.join("results", PHASE_TAG)
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -43,11 +41,13 @@ y_test = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filt
 print("HAPT labels:", np.unique(y_train))
 print("WISDM labels before remap:", np.unique(y_test))
 print("WISDM label counts before remap:", {label: np.sum(y_test == label) for label in np.unique(y_test)})
+
 remap = {
     1: 2,  # SITTING  -> 2
     2: 3,  # STANDING -> 3
     3: 1   # WALKING  -> 1
 }
+
 y_test = np.vectorize(remap.get)(y_test)
 print("WISDM labels after remap:", np.unique(y_test))
 print("WISDM label counts after remap:", {label: np.sum(y_test == label) for label in np.unique(y_test)})
@@ -139,6 +139,23 @@ Definitely ≪ training accuracy
 test_acc = accuracy_score(y_test, y_pred)
 print(f"WISDM test accuracy: {test_acc:.3f}")
 
+# ==============================
+# PERFORMANCE DEGRADATION PLOT
+# ==============================
+plt.figure(figsize=(6, 5))
+plt.bar(["Source (HAPT)", "Target (WISDM)"], [train_acc, test_acc])
+plt.ylim(0, 1.0)
+plt.ylabel("Accuracy")
+plt.title(f"{PHASE_TAG.upper()} – Performance Degradation")
+
+for i, v in enumerate([train_acc, test_acc]):
+    plt.text(i, v + 0.02, f"{v:.2f}", ha="center")
+
+plt.tight_layout()
+plt.savefig(os.path.join(RESULTS_DIR, "performance_degradation.png"), dpi=300)
+plt.close()
+
+
 # Confusion matrix
 cm = confusion_matrix(y_test, y_pred)
 print("Confusion matrix:\n", cm)
@@ -171,6 +188,7 @@ with open(os.path.join(RESULTS_DIR, "metrics.txt"), "w") as f:
     f.write(f"Train shape: {X_train.shape}\n")
     f.write(f"Test shape : {X_test.shape}\n")
     f.write(f"WISDM label counts after remap: { {label: int(np.sum(y_test == label)) for label in np.unique(y_test)} }\n")
+
 
 
 
