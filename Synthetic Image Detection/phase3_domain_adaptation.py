@@ -95,7 +95,65 @@ def normalize_zscore_per_dataset(X_src, X_tgt):
     X_tgt_n = s_tgt.fit_transform(X_tgt)
     return X_src_n, X_tgt_n
 
+# =====================================
+# INDIVIDUAL BASE LEARNER EVALUATION
+# =====================================
+def exp_individual_base_learner_eval(X_hapt, y_hapt, X_wisdm, y_wisdm):
+    """
+    Train each base learner independently on HAPT (source),
+    then evaluate each on WISDM (target) — no stacking, no meta-learner.
+    Fills the 'Base Learner vs Accuracy on WISDM' table.
+    """
+    out_dir = os.path.join(PHASE3_DIR, "0_individual_base_learners")
+    os.makedirs(out_dir, exist_ok=True)
 
+    Xs, Xt = normalize_minmax_source_only(X_hapt, X_wisdm)
+
+    results = {}
+    summary_lines = [f"{'Base Learner':<25} {'Train Acc (HAPT)':>18} {'Test Acc (WISDM)':>18}\n",
+                     "-" * 63 + "\n"]
+
+    for name, model in get_base_learners():
+        m = clone(model)
+        m.fit(Xs, y_hapt)
+
+        train_acc = accuracy_score(y_hapt, m.predict(Xs))
+        y_pred    = m.predict(Xt)
+        test_acc  = accuracy_score(y_wisdm, y_pred)
+
+        cm     = confusion_matrix(y_wisdm, y_pred)
+        report = classification_report(y_wisdm, y_pred, target_names=LABELS_3CLASS, digits=4)
+
+        save_metrics(out_dir, name, train_acc, test_acc, report, cm)
+        save_degradation_plot(out_dir, name, train_acc, test_acc)
+
+        results[name] = test_acc
+        summary_lines.append(f"{name:<25} {train_acc:>18.4f} {test_acc:>18.4f}\n")
+        print(f"  [{name}]  HAPT train: {train_acc:.4f}  |  WISDM test: {test_acc:.4f}")
+
+    # Save a single summary table
+    with open(os.path.join(out_dir, "summary_table.txt"), "w") as f:
+        f.writelines(summary_lines)
+
+    # Bar chart — mirrors the table visually
+    names = list(results.keys())
+    accs  = list(results.values())
+
+    plt.figure(figsize=(8, 5))
+    bars = plt.bar(names, accs, color="steelblue", edgecolor="black")
+    plt.ylim(0, 1.0)
+    plt.ylabel("Accuracy on WISDM (target)")
+    plt.title("Individual Base Learner Accuracy: HAPT → WISDM")
+    plt.xticks(rotation=15, ha="right")
+    for bar, acc in zip(bars, accs):
+        plt.text(bar.get_x() + bar.get_width() / 2,
+                 bar.get_height() + 0.02,
+                 f"{acc:.4f}", ha="center", fontsize=9)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "base_learners_bar_chart.png"), dpi=300)
+    plt.close()
+
+    return results
 # ==================================================
 # STACKING (custom, to allow "meta-only retrain")
 # ==================================================
@@ -356,6 +414,10 @@ if __name__ == "__main__":
     print("HAPT:", X_hapt.shape, np.unique(y_hapt, return_counts=True))
     print("WISDM:", X_wisdm.shape, np.unique(y_wisdm, return_counts=True))
 
+    # 0) Individual base learner evaluation (fills the table)
+    print("\n=== Individual Base Learner Evaluation ===")
+    exp_individual_base_learner_eval(X_hapt, y_hapt, X_wisdm, y_wisdm)
+    
     # A) distribution alignment
     exp_feature_distribution_alignment(X_hapt, y_hapt, X_wisdm, y_wisdm)
 
