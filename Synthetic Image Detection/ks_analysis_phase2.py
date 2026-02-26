@@ -19,12 +19,11 @@ X_hapt = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synt
 X_wisdm = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm_phase2\X_filtered.txt")
 
 # ======================
-# LOAD LABELS (NEW)
+# LOAD LABELS
 # ======================
 y_hapt = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Synthetic Image Detection\hapt_3class_output_phase2\y_hapt.txt").astype(int)
 y_wisdm = np.loadtxt(r"C:\Users\tomin\source\repos\Synthetic Image Detection\Filtered_datasets_and_KS_results\3class_wisdm_phase2\y_filtered.txt").astype(int)
 
-# If your WISDM y_filtered is NOT aligned to HAPT semantics, uncomment and apply:
 remap = {1: 2, 2: 3, 3: 1}
 y_wisdm = np.vectorize(remap.get)(y_wisdm)
 
@@ -54,7 +53,7 @@ for act in activities:
 
 per_activity_arr = np.array(per_activity_rows, dtype=object)
 
-# Save per-activity CSV (matches your naming convention)
+# Save per-activity CSV
 per_activity_csv = os.path.join(RESULTS_DIR, "ks_test_per_activity_3class_phase2.csv")
 with open(per_activity_csv, "w") as f:
     f.write("activity,feature_idx,ks_statistic,p_value,significant\n")
@@ -66,7 +65,6 @@ print("Saved:", per_activity_csv)
 # ===============================
 # PER-ACTIVITY SUMMARY + PLOT 
 # ===============================
-# Compute mean KS and % significant per activity
 activity_summary = []
 for act in activities:
     act_name = LABELS[act]
@@ -77,7 +75,6 @@ for act in activities:
     sig_vals = np.array([r[4] for r in rows], dtype=int)
     activity_summary.append((act_name, ks_vals.mean(), 100.0 * sig_vals.mean()))
 
-# Sort by mean KS desc (like your plots)
 activity_summary.sort(key=lambda x: x[1], reverse=True)
 
 names = [x[0] for x in activity_summary]
@@ -86,13 +83,11 @@ sig_pct = [x[2] for x in activity_summary]
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-# Left: mean KS by activity
 axes[0].barh(names, mean_ks)
 axes[0].set_xlabel("Mean K-S Statistic")
 axes[0].set_title("Domain Shift by Activity (3CLASS)")
 axes[0].invert_yaxis()
 
-# Right: % significant by activity
 axes[1].barh(names, sig_pct)
 axes[1].set_xlabel("% Features with Significant Shift (p < 0.05)")
 axes[1].set_title("Statistical Significance by Activity")
@@ -104,3 +99,89 @@ plt.savefig(out_plot, dpi=300)
 plt.close()
 
 print("Saved:", out_plot)
+
+# =====================================================
+# OVERALL KS BEFORE NORMALIZATION (BASELINE)  ← FIX
+# =====================================================
+print("\n=== Running KS Before Normalization (Baseline) ===")
+
+ks_stats = []
+p_values = []
+
+for i in range(n_features):
+    stat, p = ks_2samp(X_hapt[:, i], X_wisdm[:, i])
+    ks_stats.append(stat)
+    p_values.append(p)
+
+ks_stats = np.array(ks_stats)
+p_values = np.array(p_values)
+
+np.savetxt(
+    os.path.join(RESULTS_DIR, "ks_test_overall_3class_raw.csv"),
+    np.column_stack((ks_stats, p_values)),
+    delimiter=",",
+    header="ks_statistic,p_value",
+    comments=""
+)
+
+print("Median KS (Before normalization):", np.median(ks_stats))
+print("Significant features (p < 0.05):",
+      np.sum(p_values < 0.05), "/", len(p_values))
+
+# =====================================================
+# Z-SCORE NORMALIZATION PER DATASET
+# =====================================================
+from sklearn.preprocessing import StandardScaler
+
+print("\n=== Running KS After Z-Score Normalization ===")
+
+scaler_hapt = StandardScaler()
+scaler_wisdm = StandardScaler()
+
+X_hapt_z = scaler_hapt.fit_transform(X_hapt)
+X_wisdm_z = scaler_wisdm.fit_transform(X_wisdm)
+
+ks_stats_z = []
+p_values_z = []
+
+for i in range(X_hapt_z.shape[1]):
+    stat, p = ks_2samp(X_hapt_z[:, i], X_wisdm_z[:, i])
+    ks_stats_z.append(stat)
+    p_values_z.append(p)
+
+ks_stats_z = np.array(ks_stats_z)
+p_values_z = np.array(p_values_z)
+
+np.savetxt(
+    os.path.join(RESULTS_DIR, "ks_test_overall_3class_zscore.csv"),
+    np.column_stack((ks_stats_z, p_values_z)),
+    delimiter=",",
+    header="ks_statistic,p_value",
+    comments=""
+)
+
+print("Median KS (After Z-score):", np.median(ks_stats_z))
+print("Significant features (p < 0.05):",
+      np.sum(p_values_z < 0.05), "/", len(p_values_z))
+
+# =====================================================
+# KS DISTRIBUTION PLOT (Z-SCORE)
+# =====================================================
+plt.figure(figsize=(7, 5))
+plt.hist(ks_stats_z, bins=20)
+plt.axvline(np.median(ks_stats_z), linestyle="--")
+plt.xlabel("K-S Statistic")
+plt.ylabel("Number of Features")
+plt.title("Distribution of K-S Statistics (3CLASS - After Z-Score)")
+plt.tight_layout()
+plt.savefig(os.path.join(RESULTS_DIR, "ks_distribution_3class_zscore.png"), dpi=300)
+plt.close()
+
+# ============================
+# BEFORE vs AFTER COMPARISON
+# ============================
+print("\n=== Distribution Shift Comparison ===")
+print("Median KS Before:", np.median(ks_stats))
+print("Median KS After :", np.median(ks_stats_z))
+print("Significant % Before:", np.mean(p_values < 0.05) * 100)
+print("Significant % After :", np.mean(p_values_z < 0.05) * 100)
