@@ -195,6 +195,102 @@ def exp_individual_base_learner_eval(X_hapt, y_hapt, X_wisdm, y_wisdm):
 
     return results
 
+# ==========================================
+# BASE LEARNER Z-SCORE RESTORATION  
+# ==========================================
+def exp_base_learners_zscore(X_hapt, y_hapt, X_wisdm, y_wisdm):
+    """
+    Re-run every base learner after z-score normalization applied
+    independently to each dataset (no label information used).
+
+    Outputs
+    -------
+    results/phase3/0b_base_learners_zscore/
+        zscore_vs_naive_summary.txt   — Naive | Z-score | Δ per model
+        zscore_vs_naive_bar_chart.png — grouped bar chart
+        {model}_zscore_metrics.txt    — per-model train/test accuracy
+        {model}_zscore_confusion_matrix.png
+    """
+    out_dir = os.path.join(PHASE3_DIR, "0b_base_learners_zscore")
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Naive (MinMax) accuracies from exp_individual_base_learner_eval
+    naive_accs = {
+        "sgd":               0.3865,
+        "random_forest":     0.6070,
+        "svm":               0.3934,
+        "xgboost":           0.7427,
+        "gradient_boosting": 0.5755,
+    }
+
+    Xs, Xt = normalize_zscore_per_dataset(X_hapt, X_wisdm)
+
+    zscore_accs  = {}
+    summary_lines = [
+        f"{'Model':<25} {'Naive':>8} {'Z-score':>10} {'Δ':>8}\n",
+        "-" * 55 + "\n"
+    ]
+
+    for name, model in get_base_learners():
+        m         = clone(model)
+        m.fit(Xs, y_hapt)
+        train_acc = accuracy_score(y_hapt, m.predict(Xs))
+        y_pred    = m.predict(Xt)
+        test_acc  = accuracy_score(y_wisdm, y_pred)
+        delta     = test_acc - naive_accs[name]
+        cm        = confusion_matrix(y_wisdm, y_pred)
+        report    = classification_report(y_wisdm, y_pred, target_names=LABELS_3CLASS, digits=4)
+
+        save_metrics(out_dir, f"{name}_zscore", train_acc, test_acc, report, cm)
+
+        zscore_accs[name] = test_acc
+        summary_lines.append(
+            f"{name:<25} {naive_accs[name]:>8.4f} {test_acc:>10.4f} {delta:>+8.4f}\n"
+        )
+        print(f"  [{name}]  Naive: {naive_accs[name]:.4f}  |  Z-score: {test_acc:.4f}  |  Δ: {delta:+.4f}")
+
+    with open(os.path.join(out_dir, "zscore_vs_naive_summary.txt"), "w", encoding="utf-8") as f:
+        f.writelines(summary_lines)
+
+    print("\n  Summary →", os.path.join(out_dir, "zscore_vs_naive_summary.txt"))
+
+    # ── Grouped bar chart ───────────────────────────────────────────────
+    model_names = list(naive_accs.keys())
+    naive_vals  = [naive_accs[n]  for n in model_names]
+    zscore_vals = [zscore_accs[n] for n in model_names]
+    deltas      = [zscore_accs[n] - naive_accs[n] for n in model_names]
+
+    x     = np.arange(len(model_names))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars1 = ax.bar(x - width/2, naive_vals,  width, label="Naive (MinMax)",
+                   color="steelblue",  edgecolor="black")
+    bars2 = ax.bar(x + width/2, zscore_vals, width, label="Z-score",
+                   color="darkorange", edgecolor="black")
+
+    # Annotate Δ above each z-score bar
+    for bar, d in zip(bars2, deltas):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.02,
+                f"{d:+.3f}", ha="center", fontsize=8,
+                color="darkred", fontweight="bold")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(model_names, rotation=15, ha="right")
+    ax.set_ylim(0, 1.15)
+    ax.set_ylabel("Accuracy on WISDM (target)")
+    ax.set_title("Base Learner Accuracy: Naive vs Z-score Normalization\n(HAPT → WISDM, Step 4)")
+    ax.legend()
+    ax.axhline(y=1.0, color="gray", linestyle="--", linewidth=0.8)
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "zscore_vs_naive_bar_chart.png"), dpi=300)
+    plt.close()
+
+    print("  Chart  →", os.path.join(out_dir, "zscore_vs_naive_bar_chart.png"))
+
+    return zscore_accs
+
 
 # ==================================================
 # STACKING
@@ -464,17 +560,20 @@ if __name__ == "__main__":
     print("HAPT  :", X_hapt.shape,  np.unique(y_hapt,  return_counts=True))
     print("WISDM :", X_wisdm.shape, np.unique(y_wisdm, return_counts=True))
 
-    print("\n=== Individual Base Learner Evaluation ===")
+    print("\n=== 0)  Individual Base Learners: Naive (MinMax) ===")
     exp_individual_base_learner_eval(X_hapt, y_hapt, X_wisdm, y_wisdm)
 
-    print("\n=== A) Distribution Alignment (Baseline + Z-score) ===")
+    print("\n=== 0b) Individual Base Learners: Z-score  [STEP 4] ===")
+    exp_base_learners_zscore(X_hapt, y_hapt, X_wisdm, y_wisdm)
+
+    print("\n=== A)  Distribution Alignment (Baseline + Z-score) ===")
     exp_feature_distribution_alignment(X_hapt, y_hapt, X_wisdm, y_wisdm)
 
-    print("\n=== B) Meta-Only Adaptation (10%) ===")
+    print("\n=== B)  Meta-Only Adaptation (10%) ===")
     exp_meta_learner_adaptation(X_hapt, y_hapt, X_wisdm, y_wisdm, wisdm_frac=0.10)
 
-    print("\n=== C) Fine-Tuning Learning Curve ===")
+    print("\n=== C)  Fine-Tuning Learning Curve ===")
     exp_fine_tuning_learning_curve(X_hapt, y_hapt, X_wisdm, y_wisdm,
                                    fracs=(0.05, 0.10, 0.25, 0.50))
 
-    print("\n\nAll done. Run next:  python build_master_table.py")
+    print("\n\nAll done.")
