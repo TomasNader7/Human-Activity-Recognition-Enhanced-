@@ -198,6 +198,15 @@ def plot_accuracy_curve(results):
                     xytext=(pct + 0.5, acc + 0.018),
                     fontsize=9, color="#1f77b4", fontweight="bold")
 
+    # ── Highlight 5% point ─────────────────────────────────────────────
+    ax.annotate(f"← 5% data\nachieves {results[0][1]*100:.1f}%",
+                xy=(5, results[0][1]),
+                xytext=(12, 0.88),
+                fontsize=10,
+                color="darkblue",
+                fontweight="bold",
+                arrowprops=dict(arrowstyle="->", color="darkblue", lw=1.8))
+
     # Shade the region between baseline and z-score
     ax.axhspan(BASELINE_ACC, ZSCORE_ACC, alpha=0.06, color="orange",
                label="Unsupervised gain (Z-score)")
@@ -214,8 +223,7 @@ def plot_accuracy_curve(results):
     plt.savefig(os.path.join(OUT_DIR, "01_accuracy_learning_curve.png"), dpi=300)
     plt.close()
     print("\n  Saved: 01_accuracy_learning_curve.png")
-
-
+    
 # =========================
 # STEP 5: STANDING RECALL CURVE
 # =========================
